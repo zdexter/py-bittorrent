@@ -15,7 +15,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--url',
-        default='173.230.132.32',
+        default='http://173.230.132.32',
         help='URL of tracker'
     )
     parser.add_argument(
@@ -30,13 +30,14 @@ if __name__ == '__main__':
         help='File to use for generation or reading.'
     )
     args = parser.parse_args()
-    
     if args.gen:
-        # Generate new torrent file and save to ./fname
-        torrent_file.generate(args.url, args.fname)
+        # Generate new torrent file
+        torrent_file = torrent_file.TorrentFile(args.fname, args.url, True)
+    else:
+        torrent_file = torrent_file.TorrentFile(args.fname, args.url) 
     if args.tests:
         import doctest
         doctest.testmod()
 
-    tracker = Tracker(args.url, args.fname)
+    tracker = Tracker(torrent_file)
     tracker.connect()
