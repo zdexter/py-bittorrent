@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from tracker import Tracker
-import torrent_file
+from torrent_file import TorrentFile
 import argparse
 
 if __name__ == '__main__':
@@ -32,9 +32,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.gen:
         # Generate new torrent file
-        torrent_file = torrent_file.TorrentFile(args.fname, args.url, True)
+        # torrent_file = torrent_file.TorrentFile(info_dict, args.fname, True)
+        pass
     else:
-        torrent_file = torrent_file.TorrentFile(args.fname, args.url) 
+        torrent_file = TorrentFile(args.fname)
+
     if args.tests:
         import doctest
         doctest.testmod()

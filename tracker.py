@@ -7,20 +7,15 @@ import bencode
 class Tracker():
     def __init__(self, torrent_file):
         self._torrent_file = torrent_file
+        self._info_dict = torrent_file.info_dict
         self._peer = self._create_peer()
-    
-    def _create_peer(self):
-        """Return a new client.
-        """
-        return client.Client()
 
     def connect(self, port=6969):
         """Make HTTP GET to tracker
         """
-        info_dict = self._torrent_file.read()
         params = {
             'info_hash': util.sha1_hash(str(
-                bencode.bencode(info_dict['info'])
+                bencode.bencode(self._info_dict['info'])
                 )),
             'peer_id': self._peer.peer_id,
             'port': port,
