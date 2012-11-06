@@ -3,71 +3,70 @@ import math
 import util
 
 class TorrentFile():
-    def __init__(self, file_name, tracker_url, write=False, piece_length=512):
-        self.file_name = file_name
-        self.tracker_url = tracker_url
-        self._write = write
-        self._piece_length = piece_length
-        if self._write:
-            self._generate()
+    def __init__(self, file_name, info_dict=None):
+        """Constructs a TorrentFile by reading a .torrent file or
+        using a info_dict.
 
-    def read(self):
-        """Return info dictionary based upon .torrent file's contents.
+        Args:
+            file_name (str)
+        Kwargs:
+            info_dict (dict)
         """
-        f = open(self.file_name, 'r')
-        contents = f.read()
-        f.seek(0, 2)
-        length = f.tell()
-        f.close()
-        info_dict = bencode.bdecode(contents) # Protocol: Metainfo file is an info dict.
-        print 'info dict in torrent_file.py:', info_dict
-        return info_dict
+        # TODO: Error checking
+        with open(file_name, 'r') as f:
+            contents = f.read()
 
-    def pieces_hashes(self, string, num_pieces):
-        """Break string into num_pieces parts.
-           Return array built from 20-byte SHA1 hashes
-            of those parts.
-        """
-        split_interval = len(string) / num_pieces
-        assert split_interval * num_pieces == len(string)
-
-        output = ""
-        current_pos = 0
-        while current_pos < len(string):
-            piece_hash = util.sha1_hash(string[current_pos:current_pos+split_interval])
-            output += piece_hash
-            current_pos += split_interval
-        return output
-
-    def _generate(self):
-        """Write a metainfo file of name file_name to 
-            current directory.
-        """
-
-        contents = 'Some random data!'
-        length = len(contents)
-        if length < self._piece_length:
-            num_pieces = 1 
+        if not info_dict:
+            self.info_dict = bencode.bdecode(contents)
         else:
-            num_pieces = math.ceil(
-                length / self._piece_length
-                )
+            self.info_dict = info_dict
+            self._generate(info_dict)
 
+        # self.info_hash = util.sha1_hash(self.info_dict['info'])
+
+    @classmethod
+    def write_torrent(cls, file_name, tracker_url, content, piece_length=512):
         info_dict = {
-            'name': self.file_name,
-            'length': length,
+            'name': file_name,
+            'length': len(contents),
             # Fields common to single and multi-file below
-            'piece_length': self._piece_length,
-            'pieces': self.pieces_hashes(contents, num_pieces)
+            'piece_length': piece_length * 1024,
+            'pieces': cls._pieces_hashes(contents)
         }
 
         metainfo = {
             'info': info_dict,
-            'announce': self.tracker_url
+            'announce': tracker_url
         }
 
-        f = open(self.file_name, 'w')
-        f.write(bencode.bencode(metainfo))
-        f.close()
+        with open(file_name, 'w') as f:
+            f.write(bencode.bencode(metainfo))
 
-        return True
+        return cls(file_name, info_dic)
+
+    @classmethod
+    def _pieces_hashes(cls, string, piece_lenth):
+        """Return array built from 20-byte SHA1 hashes
+            of the string's pieces.
+        """
+        output = ""
+        current_pos = 0
+        num_bytes= len(string)
+        while current_pos < num_bytes:
+            if current_pos + piece_length > num_bytes:
+                to_position = num_bytes
+            else:
+                to_position = current_pos + piece_length
+
+            piece_hash = util.sha1_hash(string[current_pos:to_position])
+            output += piece_hash
+            current_pos += piece_length
+
+        return output
+
+    def _num_pieces(self, contents):
+        length = len(contents)
+        if length < self.piece_length:
+            return 1
+        else:
+            return int(math.ceil(float(length) / self.piece_length))
