@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-from tracker import Tracker
-from torrent_file import TorrentFile
+from torrent import Torrent
 import argparse
 
 if __name__ == '__main__':
@@ -16,7 +15,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--url',
         default='http://173.230.132.32',
-        help='URL of tracker'
+        help='Base URL of tracker'
     )
     parser.add_argument(
         '--gen',
@@ -32,14 +31,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.gen:
         # Generate new torrent file
-        # torrent_file = torrent_file.TorrentFile(info_dict, args.fname, True)
+        torrent = Torrent.write_metainfo_file(args.fname, args.url, 'The lazy brown fox jumped over the fat cow.')
         pass
-    else:
-        torrent_file = TorrentFile(args.fname)
-
+    else: # Read existing file
+        torrent = Torrent(args.fname) 
     if args.tests:
         import doctest
         doctest.testmod()
 
-    tracker = Tracker(torrent_file)
-    tracker.connect()

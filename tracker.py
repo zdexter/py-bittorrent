@@ -1,33 +1,33 @@
 import urllib2, urllib
-import torrent_file
 import client
 import util
 import bencode
 
 class Tracker():
-    def __init__(self, torrent_file):
-        self._torrent_file = torrent_file
-        self._info_dict = torrent_file.info_dict
-        self._peer = self._create_peer()
-
+    def __init__(self, torrent, client):
+        self.torrent = torrent
+        self.client = client
     def connect(self, port=6969):
         """Make HTTP GET to tracker
         """
         params = {
             'info_hash': util.sha1_hash(str(
-                bencode.bencode(self._info_dict['info'])
+                bencode.bencode(self.torrent.info_dict['info'])
                 )),
-            'peer_id': self._peer.peer_id,
+            'peer_id': self.client.peer_id,
             'port': port,
             'uploaded': 0,
             'downloaded': 0,
-            'left': info_dict['info']['length'],
+            'left': self.torrent.info_dict['info']['length'],
             'event': 'started'
         }
-        full_url = self._torrent_file.tracker_url + ":" + str(port)
-        get_url = full_url + "?" + urllib.urlencode(params)
+        announce_url = self.torrent.info_dict['announce'] + \
+             ":" + str(port) + "/announce"
+        get_url = announce_url + "?" + urllib.urlencode(params)
         print get_url
-        req = urllib2.urlopen(get_url)
+        return bencode.bdecode(
+            urllib2.urlopen(get_url).read()
+            )
 
     def parse_response(self, response):
         response = bencode.bdecode(response)

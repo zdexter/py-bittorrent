@@ -1,16 +1,13 @@
 import bencode
 import math
 import util
+from client import Client
+from tracker import Tracker
 
-class TorrentFile():
+class Torrent():
     def __init__(self, file_name, info_dict=None):
-        """Constructs a TorrentFile by reading a .torrent file or
-        using a info_dict.
-
-        Args:
-            file_name (str)
-        Kwargs:
-            info_dict (dict)
+        """Reads existing metainfo file, or writes a new one.
+           Builds client, fetches peer list, and construct peers.
         """
         # TODO: Error checking
         with open(file_name, 'r') as f:
@@ -20,18 +17,21 @@ class TorrentFile():
             self.info_dict = bencode.bdecode(contents)
         else:
             self.info_dict = info_dict
-            self._generate(info_dict)
 
         # self.info_hash = util.sha1_hash(self.info_dict['info'])
+        self.client = Client([self])
+        self.tracker = Tracker(self, self.client)
+        resp = self.tracker.connect()
+        print resp
 
     @classmethod
-    def write_torrent(cls, file_name, tracker_url, content, piece_length=512):
+    def write_metainfo_file(cls, file_name, tracker_url, contents, piece_length=512):
         info_dict = {
             'name': file_name,
             'length': len(contents),
             # Fields common to single and multi-file below
             'piece_length': piece_length * 1024,
-            'pieces': cls._pieces_hashes(contents)
+            'pieces': cls._pieces_hashes(contents, piece_length)
         }
 
         metainfo = {
@@ -42,10 +42,10 @@ class TorrentFile():
         with open(file_name, 'w') as f:
             f.write(bencode.bencode(metainfo))
 
-        return cls(file_name, info_dic)
+        return cls(file_name, info_dict)
 
     @classmethod
-    def _pieces_hashes(cls, string, piece_lenth):
+    def _pieces_hashes(cls, string, piece_length):
         """Return array built from 20-byte SHA1 hashes
             of the string's pieces.
         """
