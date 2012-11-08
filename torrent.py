@@ -1,7 +1,8 @@
 import bencode
 import math
 import util
-from client import Client
+import urllib2
+from client import Client, Peer
 from tracker import Tracker
 
 class Torrent():
@@ -12,17 +13,44 @@ class Torrent():
         # TODO: Error checking
         with open(file_name, 'r') as f:
             contents = f.read()
-
-        if not info_dict:
-            self.info_dict = bencode.bdecode(contents)
-        else:
-            self.info_dict = info_dict
-
-        # self.info_hash = util.sha1_hash(self.info_dict['info'])
+        self.info_dict = info_dict or bencode.bdecode(contents)
+        self.info_hash = util.sha1_hash(
+            bencode.bencode(self.info_dict['info']) # metainfo file is bencoded
+            )
         self.client = Client([self])
         self.tracker = Tracker(self, self.client)
         resp = self.tracker.connect()
-        print resp
+        self.client.connect_to_peers(
+            self._new_peers(
+                self._get_peers(resp)
+                )
+            )
+    def _new_peers(self, peer_list):
+        own_ext_ip = urllib2.urlopen('http://whatsmyip.org').read() # HACK
+        return [Peer(p[0], p[1]) for p in peer_list if p[0] != own_ext_ip]
+        
+        for peer in peer_list:
+            # Is overwriting memory in this manner bad?
+            # What does changing the size of each array item
+            #   lead to in terms of memory allocation?
+            peer = Peer(peer[0], peer[1])
+        return peer_list
+
+    def _get_peers(self, resp):
+        raw_bytes = [ord(c) for c in resp['peers']]
+        peers = []
+        for i in range(0,len(raw_bytes) / 6):
+            start = i*6
+            end = start + 6
+            ip = ".".join(str(i) for i in raw_bytes[start:end-2])
+            port = raw_bytes[end-2:end]
+            port = (port[1]) + (port[0] * 256)
+            peers.append([ip,port])
+        return peers
+    def length(self):
+        if 'length' in self.info_dict['info']:
+            return self.info_dict['info']['length']
+        return sum(f['length'] for f in self.info_dict['info']['files'])
 
     @classmethod
     def write_metainfo_file(cls, file_name, tracker_url, contents, piece_length=512):
@@ -33,7 +61,6 @@ class Torrent():
             'piece_length': piece_length * 1024,
             'pieces': cls._pieces_hashes(contents, piece_length)
         }
-
         metainfo = {
             'info': info_dict,
             'announce': tracker_url
@@ -41,8 +68,8 @@ class Torrent():
 
         with open(file_name, 'w') as f:
             f.write(bencode.bencode(metainfo))
-
-        return cls(file_name, info_dict)
+        
+        return cls(file_name, metainfo)
 
     @classmethod
     def _pieces_hashes(cls, string, piece_length):
