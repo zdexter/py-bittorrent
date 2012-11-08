@@ -6,29 +6,36 @@ import struct
 class NetworkedPeer(object):
     def __init__(self):
         self._outbound = []
-        self._socket = socket.socket(
-            socket.AF_INET,
-            socket.SOCK_STREAM,
-            )
 
-    def connect_to(self, address, port):
+    def connect_to(self, full_address):
         """Connect to address:port via TCP
             and return a file descriptor
             representing the new connection.
         """
-        address = (address, port)
-        print('Connecting to {}'.format(address))
-        self._socket.connect(address)
-        print('Success: Socket opened to {}'.format(address))
+        print type(full_address[0])
+        self._socket = socket.create_connection(full_address)
+        print('Success: Socket opened to {}:{}'.format(
+            full_address[0], full_address[1]
+            ))
         return self._socket
-    def send_msg(self, msg):
-        print 'Sending msg to client', msg
-        self._outbound.append(msg)
-    def recv_msg(self, msg):
+    def send_next_msg(self):
+        """Send next message in queue over socket.
+        """
+        try:
+            msg = self._outbound.pop()
+        except IndexError:
+            return False
+        print 'Sending message:', msg
+        self._socket.send(msg)
+    def recv_msg(self):
+        """Receive msg on socket.
+        """
+        msg = self._socket.recv(2048)
+        if len(msg) == 0: return
+        print 'Receiving message:', msg
         # decode_wire_msg(msg)
-        pass
-    def next_msg(self):
-        return self._outbound.pop()
+    def enqueue_msg(self, msg):
+        self._outbound.append(msg)
     def fileno(self):
         return self._socket.fileno()
 
@@ -63,9 +70,6 @@ class Client(NetworkedPeer):
             self.peer_id
             ]
         return ''.join(handshake) # This doesn't seem like the best way to concat.
-    def add_peer(self, peer):
-        self.peers[peer.peer_id] = peer
-        self.handshake(peer)
     def start_serving(self, torrent):
         self.info_hashes[torrent] = torrent_file
     def stop_serving(self, torrent):
@@ -74,11 +78,13 @@ class Client(NetworkedPeer):
         for peer in peer_list:
             handshake = self.build_handshake(peer)
             try:
-                self.connect_to(peer.ip, peer.port)
+                self.connect_to((peer.ip, peer.port))
             except socket.error, e:
-                print('Socket error: {}'.format(e))
+                print('Socket error while connecting to {}:{}: {}'.format(
+                    peer.ip, peer.port, e
+                    ))
                 continue
-            peer.send_msg(handshake)
+            peer.enqueue_msg(handshake)
     def parse_msg(self, msg):
         length, msg_id, payload = struct.unpack('4s1Bs')
         if len(payload) == int(length):

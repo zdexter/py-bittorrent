@@ -26,7 +26,7 @@ class Torrent():
                 )
             )
     def _new_peers(self, peer_list):
-        own_ext_ip = urllib2.urlopen('http://whatsmyip.org').read() # HACK
+        own_ext_ip = urllib2.urlopen('http://whatismyip.org').read() # HACK
         return [Peer(p[0], p[1]) for p in peer_list if p[0] != own_ext_ip]
         
         for peer in peer_list:

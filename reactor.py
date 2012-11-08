@@ -19,18 +19,13 @@ class Reactor():
         inputs = self._subscribers.values()
         outputs = self._subscribers.values()
         while inputs:
-            inputs = [i._socket for i in inputs]
-            print inputs
-            readable, writable, exceptional = select.select(inputs, outputs, inputs, 10)
+            #inputs = [i._socket for i in inputs]
+            readable, writeable, exceptional = select.select(inputs, outputs, inputs, 10)
             
             for s in readable:
-                print 'Readable', s
-                self._subscribers[s].recv_msg(
-                    s.recv(2048)
-                    )
+                s.recv_msg()
             for s in writeable:
-                print 'Writeable', s
-                s.send(self.subscribers[s].next_msg())
+                s.send_next_msg()
             for s in exceptional:
                 print 'Exceptional', s
 
