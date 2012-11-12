@@ -13,7 +13,7 @@ class Torrent():
         # TODO: Error checking
         with open(file_name, 'r') as f:
             contents = f.read()
-        self.info_dict = info_dict or bencode.bdecode(contents)
+        self.info_dict = info_dict or bencode.bdecode(contents) # If read, bdecode
         self.info_hash = util.sha1_hash(
             bencode.bencode(self.info_dict['info']) # metainfo file is bencoded
             )
@@ -21,20 +21,11 @@ class Torrent():
         self.tracker = Tracker(self, self.client)
         resp = self.tracker.connect()
         self.client.connect_to_peers(
-            self._new_peers(
-                self._get_peers(resp)
+                self._new_peers(self._get_peers(resp))
                 )
-            )
     def _new_peers(self, peer_list):
-        own_ext_ip = urllib2.urlopen('http://whatismyip.org').read() # HACK
+        own_ext_ip = urllib2.urlopen('http://ifconfig.me/ip').read() # HACK
         return [Peer(p[0], p[1]) for p in peer_list if p[0] != own_ext_ip]
-        
-        for peer in peer_list:
-            # Is overwriting memory in this manner bad?
-            # What does changing the size of each array item
-            #   lead to in terms of memory allocation?
-            peer = Peer(peer[0], peer[1])
-        return peer_list
 
     def _get_peers(self, resp):
         raw_bytes = [ord(c) for c in resp['peers']]

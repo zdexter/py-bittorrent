@@ -37,7 +37,6 @@ if __name__ == '__main__':
         pass
     else: # Read existing file
         torrent = Torrent(args.metainfo) 
-
     reactor.add_torrent(torrent)
     reactor.select()
     if args.tests:
