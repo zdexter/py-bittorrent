@@ -1,53 +1,11 @@
 import socket
 import time
 import util
-import struct
+from conn import MsgConnection, AcceptConnection
 from message import WireMessage
 
-class NetworkedPeer(object):
-    def __init__(self):
-        self._outbound = []
-
-    def send_next_msg(self):
-        """Send next message in queue over socket.
-        """
-        try:
-            msg = self._outbound.pop()
-        except IndexError:
-            return False
-        print 'Sending message to {}:{}'.format(self.ip, self.port)
-        bytes_sent = self.socket.send(msg)
-        assert len(msg) == bytes_sent
-    def recv_msg(self):
-        """Receive msg on socket.
-        """
-        buf = ""
-        #print self.__class__
-        #print self.socket.fileno()
-        #print self.socket.getpeername(), self.socket.getsockname()
-        #conn, addr = self.socket.accept()
-        #print 'Conn was {} and addr was {}'.format(conn,addr)
-        while True:
-            try:
-                msg = self.socket.recv(512)
-            except Exception, e:
-                print 'Something went wrong with recv():', e
-                print self.ip, self.port
-                break
-            else:
-                if len(msg) == 0: break
-                buf += msg
-        if len(buf) == 0: return False
-        msg_type, msg_contents = WireMessage.decode(msg)
-        print 'Got wire msg of type {}: {}'.format(msg_type,msg_contents)
-
-    def enqueue_msg(self, msg):
-        self._outbound.append(msg)
-    def fileno(self):
-        return self.socket.fileno()
-
-class Peer(NetworkedPeer):
-    def __init__(self, ip, port, peer_id=None):
+class Peer(object):
+    def __init__(self, ip, port, peer_id=None, conn=None):
         self.ip = ip
         self.port = port
 
@@ -55,51 +13,75 @@ class Peer(NetworkedPeer):
             self.peer_id = peer_id
         else:
             seed = self.ip + str(time.time())
-            self.peer_id = util.sha1_hash(self.ip)
+            self.peer_id = util.sha1_hash(self.ip) # Until handshake
 
         self.am_choking = True
         self.am_interested = False
         self.choking = True
         self.interested = False
-        super(Peer, self).__init__()
-    def get_full_address(self):
-        return (self.ip, self.port)
-    def connect(self, timeout=2):
-        """Connect to address:port via TCP
-            and return a file descriptor
-            representing the new connection.
-        """
-        self.socket = socket.create_connection((self.ip, self.port), timeout)
-        print('Success: Socket opened to {}:{}'.format(
-            self.ip, self.port
-            ))
+        if conn:
+            self.conn = MsgConnection(self, conn)
+        else:
+            self.conn = MsgConnection(self)
+        
+    def add_conn(self, conn):
+        self.conn = conn
 
-class Client(NetworkedPeer):
-    def __init__(self, torrent_list, bind_to=6881):
+    def handshake(self, msg):
+        print 'Received handshake:', msg, len(msg)
+    def keep_alive(self):
+        print 'Received keep-alive'
+    def choke(self):
+        self.choking = True
+    def unchoke(self):
+        self.choking = False
+    def interested(self):
+        self.interested = True
+    def not_interested(self):
+        self.interested = False
+    def have(self, piece_index):
+        pass
+    def bitfield(self, bitfield):
+        print 'Received bitfield'
+    def request(self, index, begin, length):
+        pass
+    def piece(self, index, begin, block):
+        pass
+    def cancel(self, index, begin, length):
+        pass
+    def port(self, listen_port):
+        pass
+
+class Client(object):
+    def __init__(self, torrent_list):
         self.peer_id = self._gen_peer_id()
         self.peers = {}
+        self._pending_peers = []
         self.torrents = torrent_list
         self.torrent = torrent_list[0]
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.bind(('localhost', bind_to))
-        self.socket.listen(5)
-        super(Client, self).__init__()
+        self.conn = AcceptConnection(self)
+
+    def handshake(self, new_conn, addr, msg):
+        peer_id = msg[20:]
+        self.peers[peer_id] = Peer(addr[0], addr[1], peer_id, conn)
 
     def start_serving(self, torrent):
         self.info_hashes[torrent] = torrent_file
+
     def stop_serving(self, torrent):
         del self.torrents[torrent]
+
     def connect_to_peers(self, peer_list):
         for peer in peer_list:
             handshake = WireMessage.build_handshake(self, peer, self.torrent)
             try:
-                peer.connect()
+                peer.conn.connect(peer.ip, peer.port)
             except socket.error, e:
                 print('Socket error while connecting to {}:{}: {}'.format(
                     peer.ip, peer.port, e
                     ))
             else:
-                peer.enqueue_msg(handshake)
+                peer.conn.enqueue_msg(handshake)
                 self.peers[peer.peer_id] = peer
     def _gen_peer_id(self):
         """Return a hash of the (not necessarily fully qualified)

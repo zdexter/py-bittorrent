@@ -2,18 +2,17 @@ import select
 
 class Reactor():
     def __init__(self):
-        self._subscribers = {} # {peer_id: callback}
+        self._subscribers = {} # {peer_id: class instance}
         self.timers = []
     def add_torrent(self, torrent):
         """Add torrent's client peers to the event loop.
         """
         print 'Peers were', torrent.client.peers
         for peer_id in torrent.client.peers.keys():
-            self._subscribers[peer_id] = torrent.client.peers[peer_id]
-        self._subscribers[torrent.client.peer_id] = torrent.client
+            self._subscribers[peer_id] = torrent.client.peers[peer_id].conn
+        self._subscribers[torrent.client.peer_id] = torrent.client.conn
 
     def select(self):
-        # peers = self._subscribers.keys()
         # inputs: file descriptors ready for reading
         # outputs: file descriptors ready for writing
         # select() calls fileno() on arguments
