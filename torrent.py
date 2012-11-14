@@ -17,15 +17,22 @@ class Torrent():
         self.info_hash = util.sha1_hash(
             bencode.bencode(self.info_dict['info']) # metainfo file is bencoded
             )
-        self.client = Client([self])
+        pieces = self.info_dict['info']['pieces']
+        self.pieces = [
+                pieces[i:i+20] for i in range(
+                    0, len(pieces), 20
+                    )
+                ]
+        print 'split torrent into', pieces
+        self.client = Client({self.info_hash: self})
         self.tracker = Tracker(self, self.client)
         resp = self.tracker.connect()
         self.client.connect_to_peers(
-                self._new_peers(self._get_peers(resp))
+                self._new_peers(self._get_peers(resp), self.client)
                 )
-    def _new_peers(self, peer_list):
+    def _new_peers(self, peer_list, client):
         own_ext_ip = urllib2.urlopen('http://ifconfig.me/ip').read() # HACK
-        return [Peer(p[0], p[1]) for p in peer_list if p[0] != own_ext_ip]
+        return [Peer(p[0], p[1], client) for p in peer_list if p[0] != own_ext_ip]
 
     def _get_peers(self, resp):
         raw_bytes = [ord(c) for c in resp['peers']]
@@ -69,7 +76,7 @@ class Torrent():
         """
         output = ""
         current_pos = 0
-        num_bytes= len(string)
+        num_bytes = len(string)
         while current_pos < num_bytes:
             if current_pos + piece_length > num_bytes:
                 to_position = num_bytes

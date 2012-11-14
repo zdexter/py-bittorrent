@@ -2,18 +2,21 @@ import struct
 import binascii
 
 class WireMessage(object):
+    LP = '!iB' # "Length Prefix" (req'd by protocol)
     MESSAGE_TYPES = {
         -1: 'keep-alive',
-        0: 'choke',
-        1: 'unchoke',
-        2: 'interested',
-        3: 'not interested',
-        4: 'have',
-        5: 'bitfield',
-        6: 'request',
-        7: 'piece',
-        8: 'cancel',
-        9: 'port'
+        0: ('choke', LP, 1),
+        1: ('unchoke', LP, 1),
+        2: ('interested', LP, 1),
+        3: ('not interested', LP, 1),
+        4: ('have', LP+'4s', 5),
+        # bitfield: Append <bitfield> later. Dynamic length.
+        5: ('bitfield', LP),
+        6: ('request', LP+'4s4s4s', 13),
+        # piece: Append <index><begin><block> later. Dynamic length.
+        7: ('piece', LP+'BB'),
+        8: ('cancel', LP+'4s4s4s', 13),
+        9: ('port', LP+'BB', 3)
     }
 
     @staticmethod
@@ -58,9 +61,7 @@ class WireMessage(object):
 
         # Try to match keep-alive
         length = struct.unpack("!I", buf[:4])[0]
-        print 'msg was', repr(buf), 'and length was', length
         if length == 0:
-            print 'Trying to call keep_alive()'
             buf = buf[4:]
             return ('keep_alive'), buf
 
@@ -72,6 +73,45 @@ class WireMessage(object):
             print 'Struct error with format {} and msg {}: {}'.format(fmt, repr(msg), e)
         try:
             buf = buf[4+length:]
-            return (cls.MESSAGE_TYPES[msg[0]], msg[1]), buf # Look up name by message id
+            return (cls.MESSAGE_TYPES[msg[0]][0], msg[1]), buf # Get func name by message id
         except IndexError:
             print 'Index error with msg:{}'.format(msg)
+
+    @classmethod
+    def construct_msg(cls, msg_id, *args):
+        """Return raw bytes formatted according to the
+            BitTorrent protocol's spec for msg_id.
+           MESSAGE_TYPES[key] = (name,{complete,partial}fmt,len(fmt+id))
+        """
+        fmt = cls.MESSAGE_TYPES[msg_id][1]
+        length = None
+        try:
+            length = cls.MESSAGE_TYPES[msg_id][2]
+        except IndexError, e:
+            # Match below --> constructing variable-length msg body
+            if msg_id == 5:
+                # bitfield: <bitfield>
+                length = len(args[0])
+                fmt += str(length) + 's'
+            elif msg_id == 7:
+                # piece: <index><begin><block>
+                length = len(args[2])
+                fmt += str(length) + 's'
+            else:
+                raise Exception(
+                        'No length for unexpected msg id {}'.format(msg_id)
+                        )
+        packed = None
+        try:
+            if len(args) == 0:
+                packed = struct.pack(fmt, length, msg_id)
+            else:
+                packed = struct.pack(fmt, length, msg_id, *args)
+        except struct.error, e:
+            print 'At struct error, args was', args, \
+                ', msg_id was', msg_id, \
+                ', fmt was', fmt, \
+                ' and length was', length
+            raise Exception(e)
+        # print 'repr of packed was', repr(packed)
+        return packed

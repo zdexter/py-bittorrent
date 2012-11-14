@@ -20,6 +20,7 @@ class AcceptConnection(object):
             print 'INCOMING HANDSHAKE'
             new_conn, addr = self.socket.accept()
             func = getattr(self._parent, msg_type)
+            assert callable(func)
             func(new_conn, addr, msg_contents)
             return True
         raise Exception('Non-handshake message received.')
@@ -62,7 +63,7 @@ class MsgConnection(object):
         buf = ""
         while True:
             try:
-                msg = self.socket.recv(512)
+                msg = self.socket.recv(4096)
             except Exception, e:
                 print 'Something went wrong with recv():', e
                 print self.ip, self.port
@@ -73,10 +74,17 @@ class MsgConnection(object):
         if len(buf) == 0: return False
         messages = WireMessage.decode_all(buf)
         for msg in messages:
-            print 'conn: recv wire msg of type {}: {}'.format(msg[0],msg[1])
+            print 'conn: recv wire msg of type {}: {}'.format(
+                    repr(msg[0]),repr(msg[1]))
             func = getattr(self._parent, msg[0])
-            func(msg[1])
+            assert callable(func)
+            try:
+                func(msg[1])
+            except AttributeError, e:
+                print 'Error: Invalid msg type {}'.format(msg[0])
     def enqueue_msg(self, msg):
         self._outbound.append(msg)
+    def close(self):
+        self.socket.close()
     def fileno(self):
         return self.socket.fileno()
