@@ -57,8 +57,29 @@ class Peer(object):
         print 'Received have'
         piece_index = struct.unpack("i", piece_index)[0]
         self._have.append(piece_index)
+    def _bits(self, data):
+        data_bytes = (ord(b) for b in data)
+        for b in data_bytes:
+            """Get bit by reducing b by 2^i.
+               Bitwise AND outputs 1s and 0s as strings.
+            """
+            for i in reversed(xrange(8)): # msb on left
+                yield (b >> i) & 1
     def bitfield(self, bitfield):
         print 'Received bitfield'
+        bitfield_length = len(bitfield)
+        bits = ''.join(str(bit) for bit in self._bits(bitfield))
+        # Trim spare bits
+        pieces_length = len(self.client.torrent.pieces)
+        # but first, sanity check: do peer & client expect same # of pieces?
+        for bit in bits[pieces_length:]: # check extra bits only
+            if bit == '1': raise Exception('Peer reporting too many pieces.')
+        bits = bits[:pieces_length]
+        # Modify torrent state with new information
+        for i in range(len(bits)):
+            bit = bits[i]
+            if bit == '1':
+                self.client.mark_piece(i,peer) 
     def request(self, index, begin, length):
         pass
     def piece(self, index, begin, block):

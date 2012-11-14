@@ -19,9 +19,7 @@ class Torrent():
             )
         pieces = self.info_dict['info']['pieces']
         self.pieces = [
-                pieces[i:i+20] for i in range(
-                    0, len(pieces), 20
-                    )
+                pieces[i:i+20] for i in range(0, len(pieces), 20)
                 ]
         print 'split torrent into', pieces
         self.client = Client({self.info_hash: self})
@@ -30,6 +28,7 @@ class Torrent():
         self.client.connect_to_peers(
                 self._new_peers(self._get_peers(resp), self.client)
                 )
+        self.have_pieces = {} # len(have_pieces[peer.info_hash]) gives rarity of piece
     def _new_peers(self, peer_list, client):
         own_ext_ip = urllib2.urlopen('http://ifconfig.me/ip').read() # HACK
         return [Peer(p[0], p[1], client) for p in peer_list if p[0] != own_ext_ip]

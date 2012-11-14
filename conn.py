@@ -54,7 +54,8 @@ class MsgConnection(object):
             msg = self._outbound.pop()
         except IndexError:
             return False
-        print 'Sending message to {}:{}'.format(self.ip, self.port)
+        print 'Sending message to {}:{}. Msg was {}'.format(
+                self.ip, self.port, repr(msg))
         bytes_sent = self.socket.send(msg)
         assert len(msg) == bytes_sent
     def recv_msg(self):
@@ -79,7 +80,10 @@ class MsgConnection(object):
             func = getattr(self._parent, msg[0])
             assert callable(func)
             try:
-                func(msg[1])
+                if msg[1]:
+                    func(msg[1])
+                else:
+                    func()
             except AttributeError, e:
                 print 'Error: Invalid msg type {}'.format(msg[0])
     def enqueue_msg(self, msg):

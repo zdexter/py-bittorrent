@@ -67,13 +67,14 @@ class WireMessage(object):
 
         fmt = "B"+str(length-1)+"s"
         try:
-            msg = struct.unpack(fmt, buf[4:4+length])
-            print 'msg was', repr(msg)
+            msg_id, msg_contents = struct.unpack(fmt, buf[4:4+length])
         except struct.error, e:
-            print 'Struct error with format {} and msg {}: {}'.format(fmt, repr(msg), e)
+            print 'Struct error with format {} and msg {}: {}'.format(
+                    fmt, repr(msg_contents), e)
         try:
             buf = buf[4+length:]
-            return (cls.MESSAGE_TYPES[msg[0]][0], msg[1]), buf # Get func name by message id
+            # Get func name by message id
+            return (cls.MESSAGE_TYPES[msg_id][0], msg_contents), buf
         except IndexError:
             print 'Index error with msg:{}'.format(msg)
 
