@@ -2,20 +2,20 @@ import struct
 import binascii
 
 class WireMessage(object):
-    LP = '!iB' # "Length Prefix" (req'd by protocol)
+    LP = '!IB' # "Length Prefix" (req'd by protocol)
     MESSAGE_TYPES = {
         -1: 'keep-alive',
         0: ('choke', LP, 1),
         1: ('unchoke', LP, 1),
         2: ('interested', LP, 1),
         3: ('not interested', LP, 1),
-        4: ('have', LP+'4s', 5),
+        4: ('have', LP+'I', 5),
         # bitfield: Append <bitfield> later. Dynamic length.
         5: ('bitfield', LP),
-        6: ('request', LP+'4s4s4s', 13),
+        6: ('request', LP+'III', 13),
         # piece: Append <index><begin><block> later. Dynamic length.
-        7: ('piece', LP+'BB'),
-        8: ('cancel', LP+'4s4s4s', 13),
+        7: ('piece', LP+'II'),
+        8: ('cancel', LP+'III', 13),
         9: ('port', LP+'BB', 3)
     }
 
@@ -50,31 +50,52 @@ class WireMessage(object):
         """Return tuple of (message type name, contents encoded in ASCII)
         """
         if buf[1:20] == pstr: # Received handshake
-            print 'handshake'
+            print 'decoded handshake'
             handshake = buf[:68]
-            handshake = struct.unpack("B"+str(len(pstr))+"s8x20s20s", handshake)
+            expected_length, info_dict, info_hash, peer_id = struct.unpack(
+                    "B"+str(len(pstr))+"s8x20s20s",
+                    handshake)
             buf = buf[68:]
-            return ('handshake', handshake[2]), buf
+            return ('handshake', (info_hash, peer_id)), buf
         
         if len(buf) < 4:
             raise Exception("Too few bytes to form a protocol message.")
 
         # Try to match keep-alive
-        length = struct.unpack("!I", buf[:4])[0]
-        if length == 0:
+        expected_length, msg_id = struct.unpack("!IB", buf[:5])
+        if expected_length == 0:
             buf = buf[4:]
             return ('keep_alive'), buf
 
-        fmt = "B"+str(length-1)+"s"
+        fmt = '!' + cls.MESSAGE_TYPES[msg_id][1][3:] # Ignore length prefix
+        args = None
+        expected_length -= 1
+        actual_length = None
+        if msg_id == 7 or msg_id == 5:
+            # Msg typ has variable length
+            if msg_id == 7:
+                fmt += str(expected_length-8) + "s"
+            elif msg_id == 5:
+                fmt += str(expected_length) + "s"
+            #print 'fmt was', fmt
+            #print 'expected_length was', expected_length
+            #print 'len(buf[5:5+length])', len(buf[5:5+expected_length])
+        if fmt:
+            actual_length = len(buf[5:5+expected_length])
+            #print 'actual', actual_length, 'expected', expected_length,\
+            #    'msg_id', msg_id
+            if expected_length == actual_length:
+                args = (x for x in struct.unpack(fmt, buf[5:5+expected_length]))
+            elif msg_id == 7: # End of piece
+                print 'here, fmt was', fmt
+                fmt.replace(str(expected_length+6), str(actual_length))
+                print 'actual_length was', actual_length
+                args = (x for x in struct.unpack(fmt, buf[5:actual_length]))
         try:
-            msg_id, msg_contents = struct.unpack(fmt, buf[4:4+length])
-        except struct.error, e:
-            print 'Struct error with format {} and msg {}: {}'.format(
-                    fmt, repr(msg_contents), e)
-        try:
-            buf = buf[4+length:]
+            length = actual_length or expected_length
+            buf = buf[5+length:] # Advanced to next message
             # Get func name by message id
-            return (cls.MESSAGE_TYPES[msg_id][0], msg_contents), buf
+            return (cls.MESSAGE_TYPES[msg_id][0], args), buf
         except IndexError:
             print 'Index error with msg:{}'.format(msg)
 

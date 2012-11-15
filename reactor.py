@@ -3,16 +3,23 @@ import select
 class Reactor():
     def __init__(self):
         self._subscribers = {} # {peer_id: class instance}
-        self.timers = []
+        self._timers = []
+    def add_callback(self, callback):
+        self._timers.append(callback)
     def add_torrent(self, torrent):
         """Add torrent's client peers to the event loop.
         """
-        print 'Peers were', torrent.client.peers
+        # print 'Peers were', torrent.client.peers
         for peer_id in torrent.client.peers.keys():
             self._subscribers[peer_id] = torrent.client.peers[peer_id].conn
         self._subscribers[torrent.client.peer_id] = torrent.client.conn
 
-    def select(self):
+    def select(self, timeout=10):
+        """Block until at least one socket is readable or writeable.
+
+        Run all callbacks every `timeout` seconds.
+
+        """
         # inputs: file descriptors ready for reading
         # outputs: file descriptors ready for writing
         # select() calls fileno() on arguments
@@ -20,7 +27,7 @@ class Reactor():
         outputs = self._subscribers.values()
         while inputs:
             # select.select() looks for fileno() on inputs and outputs
-            readable, writeable, exceptional = select.select(inputs, outputs, inputs, 10)
+            readable, writeable, exceptional = select.select(inputs, outputs, inputs, timeout)
             
             for s in readable:
                 s.recv_msg()
@@ -28,6 +35,6 @@ class Reactor():
                 s.send_next_msg()
             for s in exceptional:
                 print 'Exceptional', s
-
-            for t in self.timers:
-                pass
+            
+            for t in self._timers:
+                t()

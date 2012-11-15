@@ -36,7 +36,7 @@ if __name__ == '__main__':
         torrent = Torrent.write_metainfo_file(args.metainfo, args.url, 'The lazy brown fox jumped over the fat cow.')
         pass
     else: # Read existing file
-        torrent = Torrent(args.metainfo) 
+        torrent = Torrent(reactor, args.metainfo) 
     reactor.add_torrent(torrent)
     reactor.select()
     if args.tests:

@@ -51,11 +51,11 @@ class MsgConnection(object):
         """Send next msg in queue.
         """
         try:
-            msg = self._outbound.pop()
+            msg = self._outbound.pop(0)
         except IndexError:
             return False
-        print 'Sending message to {}:{}. Msg was {}'.format(
-                self.ip, self.port, repr(msg))
+        #print 'Sending message to {}:{}. Msg was {}'.format(
+        #        self.ip, self.port, repr(msg))
         bytes_sent = self.socket.send(msg)
         assert len(msg) == bytes_sent
     def recv_msg(self):
@@ -75,16 +75,19 @@ class MsgConnection(object):
         if len(buf) == 0: return False
         messages = WireMessage.decode_all(buf)
         for msg in messages:
-            print 'conn: recv wire msg of type {}: {}'.format(
-                    repr(msg[0]),repr(msg[1]))
+            #print 'msg was', msg
+            #print 'conn: recv wire msg of type {}: {}'.format(
+            #        repr(msg[0]),repr(msg[1]))
             func = getattr(self._parent, msg[0])
             assert callable(func)
             try:
                 if msg[1]:
-                    func(msg[1])
+                    func(*msg[1])
                 else:
                     func()
             except AttributeError, e:
+                print e
+                # Todo - make sure AttributeError actually relates to func()
                 print 'Error: Invalid msg type {}'.format(msg[0])
     def enqueue_msg(self, msg):
         self._outbound.append(msg)
