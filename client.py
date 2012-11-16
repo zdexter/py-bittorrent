@@ -74,8 +74,8 @@ class Peer(object):
             assert piece_index < len(self.client.torrent.pieces)
         except AssertionError:
             raise Exception('Peer reporting too many pieces in "have."')
-        print 'Received have {}'.format(piece_index*20)
-        self.client.torrent.decrease_rarity(piece_index*20,self.peer_id)
+        print 'Received have {}'.format(piece_index)
+        self.client.torrent.decrease_rarity(piece_index,self.peer_id)
         self._request_peer_pieces()
     def _bits(self, data):
         data_bytes = (ord(b) for b in data)
@@ -106,12 +106,13 @@ class Peer(object):
         for i in range(len(bits)):
             bit = bits[i]
             if bit == '1':
-                self.client.torrent.decrease_rarity(i*20,self.peer_id)
+                self.client.torrent.decrease_rarity(i,self.peer_id)
     def request(self, index, begin, length):
         print 'Got request'
         pass
     def piece(self, index, begin, block):
-        print 'Got piece. index was {} and begin was {}'.format(index, begin)
+        print 'Got piece from {}. index was {} and begin was {}'.format(
+                self.peer_id, index, begin)
         # print 'block length was', len(block)
         self.client.torrent.mark_block_received(index, begin, block)
         self.send_cancel(index, begin, len(block))
@@ -126,12 +127,11 @@ class Peer(object):
         msg = WireMessage.construct_msg(8, index, begin, length)
         self.conn.enqueue_msg(msg)
     def request_pieces(self, pieces):
-        for piece in pieces:
+        for i in range(len(pieces)):
             piece_length = 16384
-            index = piece
-            print '% Requesting piece with index {} %'.format(index)
+            print '% Requesting piece with index {} %'.format(i)
             # If piece_length == block, length, offset can be 0
-            msg = WireMessage.construct_msg(6, index, 0, piece_length)
+            msg = WireMessage.construct_msg(6, i, 0, piece_length)
             self.conn.enqueue_msg(msg)
     def set_interested(self, am_interested):
         """Change client's interest in peer based upon

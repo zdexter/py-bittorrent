@@ -51,11 +51,12 @@ class Torrent(object):
         """
         self.piece_length = self.info_dict['info']['piece length']
         pieces = self.info_dict['info']['pieces']
+        assert len(pieces) % 20 == 0
+        self.num_pieces = len(pieces)
         # {piece index: [Piece instance, list of peer_ids with that piece]}
-        self.pieces = dict((i, [Piece(self, i), []])
-                for i in range(0, len(pieces), 20))
-        #self.pieces = [(Piece(self, i), [], i) for i in range(0, len(pieces), 20)]
-        self.num_pieces = len(self.pieces)
+        # self.pieces = dict((i, [Piece(self, i), []])
+        #        for i in range(0, len(pieces), 20))
+        self.pieces = [(Piece(self, i), []) for i in range(self.num_pieces)]
         self._pieces_added = 0
         self.client = Client(reactor, {self.info_hash: self})
         self.tracker = Tracker(self, self.client)
@@ -83,13 +84,12 @@ class Torrent(object):
             the i-th item is the i-th rarest.
 
             Optionally return such a list for a single peer.
+
         """
         print 'Sorting {} pieces'.format(len(self.pieces))
-        pieces = None
+        pieces = sorted(self.pieces, key=lambda x: len(x[1]))
         if peer_id:
-            pieces = sorted(self.pieces, key=lambda key: peer_id in self.pieces[key][1])
-        else:
-            pieces = sorted(self.pieces.keys())
+            pieces = filter(lambda x: peer_id in x[1], pieces)
         return pieces
     def decrease_rarity(self, i, peer_id):
         """Record that peer with peer_id has the i-th piece of this torrent.
@@ -97,11 +97,7 @@ class Torrent(object):
         print 'Decreasing rarity of piece {} because {} has it.'.format(
                 i, peer_id)
         # print 'in decrease_rarity, i was {}'.format(i)
-        assert i % 20 == 0 or i == self.num_pieces*20 - 1 
-        try:
-            peer_id in self.pieces[i][1]
-        except KeyError:
-            self.pieces[i][1].append(peer_id)
+        self.pieces[i][1].append(peer_id)
     def _new_peers(self, peer_list, client):
         own_ext_ip = urllib2.urlopen('http://ifconfig.me/ip').read() # HACK
         return [Peer(p[0], p[1], client) for p in peer_list if p[0] != own_ext_ip]
