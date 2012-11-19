@@ -4,7 +4,7 @@ import binascii
 class WireMessage(object):
     LP = '!IB' # "Length Prefix" (req'd by protocol)
     MESSAGE_TYPES = {
-        -1: 'keep-alive',
+        -1: 'keep_alive',
         0: ('choke', LP, 1),
         1: ('unchoke', LP, 1),
         2: ('interested', LP, 1),
@@ -62,10 +62,18 @@ class WireMessage(object):
             raise Exception("Too few bytes to form a protocol message.")
 
         # Try to match keep-alive
-        expected_length, msg_id = struct.unpack("!IB", buf[:5])
-        if expected_length == 0:
+        # print 'buf[:5] was', buf[:5]
+        # print 'repr of buf[:5] was', repr(buf[:5])
+        # print 'len(buf[:5]) was', len(buf[:5])
+        try:
+            keep_alive = struct.unpack("!I", buf[:4])[0]
+            assert keep_alive == 0
             buf = buf[4:]
-            return ('keep_alive'), buf
+            return (cls.MESSAGE_TYPES[-1], None), buf
+        except AssertionError:
+            pass
+
+        expected_length, msg_id = struct.unpack("!IB", buf[:5])
 
         fmt = '!' + cls.MESSAGE_TYPES[msg_id][1][3:] # Ignore length prefix
         args = None
@@ -77,9 +85,6 @@ class WireMessage(object):
                 fmt += str(expected_length-8) + "s"
             elif msg_id == 5:
                 fmt += str(expected_length) + "s"
-            #print 'fmt was', fmt
-            #print 'expected_length was', expected_length
-            #print 'len(buf[5:5+length])', len(buf[5:5+expected_length])
         if fmt:
             actual_length = len(buf[5:5+expected_length])
             #print 'actual', actual_length, 'expected', expected_length,\
@@ -87,8 +92,10 @@ class WireMessage(object):
             if expected_length == actual_length:
                 args = (x for x in struct.unpack(fmt, buf[5:5+expected_length]))
             elif msg_id == 7: # End of piece
-                print 'here, fmt was', fmt
+                print 'fmt was', fmt
+                print 'expected_length was', expected_length
                 fmt.replace(str(expected_length+6), str(actual_length))
+                print 'fmt was', fmt
                 print 'actual_length was', actual_length
                 args = (x for x in struct.unpack(fmt, buf[5:actual_length]))
         try:
@@ -113,6 +120,7 @@ class WireMessage(object):
             # Match below --> constructing variable-length msg body
             if msg_id == 5:
                 # bitfield: <bitfield>
+                # print 'args was', args
                 length = len(args[0])
                 fmt += str(length) + 's'
             elif msg_id == 7:
@@ -123,7 +131,9 @@ class WireMessage(object):
                 raise Exception(
                         'No length for unexpected msg id {}'.format(msg_id)
                         )
+            length += 1 # Message ID
         packed = None
+        assert msg_id != 0
         try:
             if len(args) == 0:
                 packed = struct.pack(fmt, length, msg_id)
@@ -135,5 +145,6 @@ class WireMessage(object):
                 ', fmt was', fmt, \
                 ' and length was', length
             raise Exception(e)
-        # print 'repr of packed was', repr(packed)
+        if msg_id == 5:
+            print 'repr of packed was', repr(packed)
         return packed

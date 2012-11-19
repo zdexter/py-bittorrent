@@ -60,22 +60,26 @@ class Peer(object):
         for b in received:
             str_output += "1" if b else "0"
         difference = self.client.torrent.num_pieces - len(str_output)
-        while True:
-            if len(str_output) % 8 == 0:
-                break
+        while len(str_output) % 8 != 0:
             str_output += "0"
-
+        #print 'len(str_output) was', len(str_output)
         byte_array = ""
         for i in range(0, len(str_output), 8):
             # Convert string of 1's and 0's to base 2 integer
+            # print 'adding', repr(struct.pack('>B', int(str_output[i:i+8], 2)))
             byte_array += \
                     struct.pack('>B', int(str_output[i:i+8], 2))
+        """
         print type(byte_array)
-        print len(byte_array)
-        print byte_array
+        print 'byte array len was', len(byte_array)
+        bits = ''.join(str(bit) for bit in self._bits(byte_array))
+        assert len(byte_array) == self.client.torrent.num_pieces / 8
+        """
         return byte_array
     # Message callbacks
     def handshake(self, info_hash, peer_id):
+        print 'info_hash was', info_hash
+        assert info_hash in self.client.torrents.keys()
         print 'Received handshake resp from peer:', peer_id
         # Replace old key in dictionary
         temp_peer_id = self.peer_id
@@ -89,7 +93,8 @@ class Peer(object):
             self.conn.close()
         self.conn.enqueue_msg(WireMessage.construct_msg(2)) # Interested
         bitfield = self._build_bitfield()
-        #self.conn.enqueue_msg(WireMessage.construct_msg(5), bitfield) # Bitfield
+        # print 'bitfield repr was', repr(bitfield)
+        self.conn.enqueue_msg(WireMessage.construct_msg(5, bitfield)) # Bitfield
     def keep_alive(self):
         print 'Received keep-alive'
     def choke(self):
@@ -109,7 +114,7 @@ class Peer(object):
             assert piece_index < len(self.client.torrent.pieces)
         except AssertionError:
             raise Exception('Peer reporting too many pieces in "have."')
-        print 'Received have {}'.format(piece_index)
+        # print 'Received have {}'.format(piece_index)
         self.client.torrent.decrease_rarity(piece_index,self.peer_id)
         self._request_peer_pieces()
     def _bits(self, data):
@@ -123,7 +128,7 @@ class Peer(object):
     def bitfield(self, bitfield):
         """Decrease piece rarity for each piece the peer reports it has.
         """
-        print 'Received bitfield'
+        # print 'Received bitfield'
         bitfield_length = len(bitfield)
         bits = ''.join(str(bit) for bit in self._bits(bitfield))
         # Trim spare bits
@@ -146,17 +151,20 @@ class Peer(object):
         print 'Got request'
         pass
     def piece(self, index, begin, block):
-        # print 'Got piece from {}. index was {} and begin was {}'.format(
-        #        self.peer_id, index, begin)
+        print 'Got piece from {}. index was {} and begin was {}'.format(
+                self.peer_id, index, begin)
         # print 'block length was', len(block)
         assert begin == 0 # TODO: Handle case when this is not true
         try:
             assert self._is_valid_block(block, index)
         except AssertionError:
-            raise Exception('pieces[{}] had an invalid hash'.format(index))
-        self.client.torrent.mark_block_received(index, begin, block)
-        self.send_have(index)
-        self.send_cancel(index, begin, len(block))
+            err = 'pieces[{}] had an invalid hash'.format(index)
+            print err
+            #raise Exception(err)
+        else:
+            self.client.torrent.mark_block_received(index, begin, block)
+            self.send_have(index)
+            self.send_cancel(index, begin, len(block))
     def cancel(self, index, begin, length):
         print 'Got cancel'
         pass
@@ -175,10 +183,11 @@ class Peer(object):
     def request_pieces(self, pieces):
         for i in range(len(pieces)):
             if i != self.client.torrent.num_pieces-1:
-                piece_length = 16384
+                piece_length = self.client.torrent.piece_length
             else:
                 piece_length = self.client.torrent.last_piece_length
-            # print '% Requesting piece with index {} %'.format(i)
+            print '% Requesting piece with index {} and length {} %'.format(
+                    i, piece_length)
             # If piece_length == block, length, offset can be 0
             msg = WireMessage.construct_msg(6, i, 0, piece_length)
             self.conn.enqueue_msg(msg)

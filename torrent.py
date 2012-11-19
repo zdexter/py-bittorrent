@@ -15,8 +15,8 @@ class Block(object):
         self._data = data
         base_pos = piece.index*piece.block_size
         piece.torrent.out_file.seek(base_pos + begin)
-        print 'Writing block from piece[{}] to position {}'.format(
-                piece.index, base_pos+begin)
+        # print 'Writing block from piece[{}] to position {}'.format(
+        #        piece.index, base_pos+begin)
         piece.torrent.out_file.write(data)
 
 class Piece(object):
@@ -58,13 +58,12 @@ class Torrent(object):
         self.out_file = open(self.info_dict['info']['name'], 'w')
         self.piece_length = self.info_dict['info']['piece length']
         pieces = self.info_dict['info']['pieces']
-        self.num_pieces = 0
-        if len(pieces) % 20 == 0:
-            self.num_pieces = len(pieces) / 20
-        else:
-            self.num_pieces = len(pieces)/20 + 1
         self.pieces_hashes = list(self._read_pieces_hashes(pieces))
-        file_length = self.info_dict['info']['length']
+        self.num_pieces = len(self.pieces_hashes)
+        try:
+            file_length = self.info_dict['info']['length']
+        except KeyError: # Multi-file
+            file_length = self.info_dict['info']['files'][0]['length']
         self.last_piece_length = file_length % self.piece_length or self.piece_length
         assert len(self.pieces_hashes) == self.num_pieces
         assert (self.num_pieces-1) * self.piece_length + self.last_piece_length \
@@ -99,8 +98,9 @@ class Torrent(object):
         if self._pieces_added >= self.num_pieces:
             print '*****ALL PIECES RECEIVED*****'
         else:
-            print '* {} of {} pieces received*'.format(
-                    self._pieces_added, self.num_pieces)
+            pass
+            # print '* {} of {} pieces received*'.format(
+            #        self._pieces_added, self.num_pieces)
     def pieces_by_rarity(self, peer_id=None):
         """Return list of piece indices, where
             the i-th item is the i-th rarest.
@@ -116,8 +116,8 @@ class Torrent(object):
     def decrease_rarity(self, i, peer_id):
         """Record that peer with peer_id has the i-th piece of this torrent.
         """
-        print 'Decreasing rarity of piece {} because {} has it.'.format(
-                i, peer_id)
+        # print 'Decreasing rarity of piece {} because {} has it.'.format(
+        #        i, peer_id)
         # print 'in decrease_rarity, i was {}'.format(i)
         self.pieces[i][1].append(peer_id)
     def _new_peers(self, peer_list, client):

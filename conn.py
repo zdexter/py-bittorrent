@@ -56,7 +56,13 @@ class MsgConnection(object):
             return False
         #print 'Sending message to {}:{}. Msg was {}'.format(
         #        self.ip, self.port, repr(msg))
-        bytes_sent = self.socket.send(msg)
+        try:
+            bytes_sent = self.socket.send(msg)
+        except socket.error, e:
+            err = 'Failed to send message to {}:{}. Msg was {}.'.format(
+                    self.ip, self.port, repr(msg))
+            print e
+            raise Exception(err)
         assert len(msg) == bytes_sent
     def recv_msg(self):
         """Receive all complete messages currently on wire.
@@ -68,6 +74,7 @@ class MsgConnection(object):
             except Exception, e:
                 print 'Something went wrong with recv():', e
                 print self.ip, self.port
+                self.close()
                 break
             else:
                 if len(msg) == 0: break
@@ -75,7 +82,6 @@ class MsgConnection(object):
         if len(buf) == 0: return False
         messages = WireMessage.decode_all(buf)
         for msg in messages:
-            #print 'msg was', msg
             #print 'conn: recv wire msg of type {}: {}'.format(
             #        repr(msg[0]),repr(msg[1]))
             func = getattr(self._parent, msg[0])
