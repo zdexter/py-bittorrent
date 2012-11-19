@@ -9,30 +9,40 @@ from tracker import Tracker
 class Block(object):
     """Abstract away data storage.
     """
-    def __init__(self, begin, data):
+    def __init__(self, piece, begin, data):
         self._begin = begin
         self._length = len(data)
         self._data = data
+        base_pos = piece.index*piece.block_size
+        piece.torrent.out_file.seek(base_pos + begin)
+        print 'Writing block from piece[{}] to position {}'.format(
+                piece.index, base_pos+begin)
+        piece.torrent.out_file.write(data)
 
 class Piece(object):
     """A piece consists of block_size/file_length+1 blocks.
     """
-    def __init__(self, torrent, index, block_size=16384):
+    def __init__(self, torrent, index, piece_hash, block_size=16384):
         # Set up the expected begin indices of all blocks.
+        self.received = False
         self.torrent = torrent
         self.index = index
+        self.piece_hash = piece_hash
         self._pieces_added = 0
         self._blocks = []
         num_blocks = self.torrent.piece_length / block_size
         if self.torrent.piece_length % num_blocks != 0:
             num_blocks += 1 # Compensate for partially full last block
-        self._block_size = block_size
+        self.block_size = block_size
     def add_block(self, begin, data):
         length = len(data)
-        assert length == self._block_size
         end = begin + length
-        new_block = Block(begin, data)
+        new_block = Block(self, begin, data)
         self._blocks.append(new_block)
+        try:
+            assert length == self.block_size
+        except AssertionError:
+            self.torrent.out_file.close()
 
 class Torrent(object):
     def __init__(self, reactor, file_name, info_dict=None):
@@ -45,18 +55,26 @@ class Torrent(object):
         self.info_hash = util.sha1_hash(
             bencode.bencode(self.info_dict['info']) # metainfo file is bencoded
             )
+        self.out_file = open(self.info_dict['info']['name'], 'w')
+        self.piece_length = self.info_dict['info']['piece length']
+        pieces = self.info_dict['info']['pieces']
+        self.num_pieces = 0
+        if len(pieces) % 20 == 0:
+            self.num_pieces = len(pieces) / 20
+        else:
+            self.num_pieces = len(pieces)/20 + 1
+        self.pieces_hashes = list(self._read_pieces_hashes(pieces))
+        file_length = self.info_dict['info']['length']
+        self.last_piece_length = file_length % self.piece_length or self.piece_length
+        assert len(self.pieces_hashes) == self.num_pieces
+        assert (self.num_pieces-1) * self.piece_length + self.last_piece_length \
+                == file_length
         """ Data structure for easy lookup of piece rarity
             pieces[hash] has list of Peer instances with that piece
             Get rarity: len(pieces[hash])
         """
-        self.piece_length = self.info_dict['info']['piece length']
-        pieces = self.info_dict['info']['pieces']
-        assert len(pieces) % 20 == 0
-        self.num_pieces = len(pieces)
-        # {piece index: [Piece instance, list of peer_ids with that piece]}
-        # self.pieces = dict((i, [Piece(self, i), []])
-        #        for i in range(0, len(pieces), 20))
-        self.pieces = [(Piece(self, i), []) for i in range(self.num_pieces)]
+        self.pieces = [
+                (Piece(self, i, self.pieces_hashes[i]), []) for i in range(self.num_pieces)]
         self._pieces_added = 0
         self.client = Client(reactor, {self.info_hash: self})
         self.tracker = Tracker(self, self.client)
@@ -71,10 +89,14 @@ class Torrent(object):
          what its index is.
 
         """
-        self.pieces[index][0].add_block(begin, block)
-        return
+        piece = self.pieces[index][0]
+        if piece.received:
+            return
+
+        piece.add_block(begin, block)
+        piece.received = True
         self._pieces_added += 1
-        if self._pieces_added == self.num_pieces:
+        if self._pieces_added >= self.num_pieces:
             print '*****ALL PIECES RECEIVED*****'
         else:
             print '* {} of {} pieces received*'.format(
@@ -136,6 +158,12 @@ class Torrent(object):
             f.write(bencode.bencode(metainfo))
         
         return cls(file_name, metainfo)
+    def _read_pieces_hashes(self, pieces):
+        """Return array built from 20-byte SHA1 hashes
+            of the string's pieces.
+        """
+        for i in range(0, len(pieces), 20):
+            yield pieces[i:i+20]
 
     @classmethod
     def _pieces_hashes(cls, string, piece_length):

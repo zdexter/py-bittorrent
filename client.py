@@ -41,6 +41,39 @@ class Peer(object):
                     len(self.client.torrent.pieces)
                     )
             self.request_pieces(peer_has_pieces)
+    def _is_valid_block(self, block, index):
+        block_hash = util.sha1_hash(block)
+        expected_hash = self.client.torrent.pieces[index][0].piece_hash
+        # print 'block_hash was', block_hash
+        # print 'expected_hash was', expected_hash
+        return block_hash == expected_hash
+    def _build_bitfield(self):
+        """Return at least len(pieces) bits as complete bytes.
+
+           Bit at position i represents client's posession (1)
+            or lack (0) of the data at pieces[i].
+
+        """
+        received = [x[0].received for x in self.client.torrent.pieces]
+        assert len(received) == self.client.torrent.num_pieces
+        str_output = ""
+        for b in received:
+            str_output += "1" if b else "0"
+        difference = self.client.torrent.num_pieces - len(str_output)
+        while True:
+            if len(str_output) % 8 == 0:
+                break
+            str_output += "0"
+
+        byte_array = ""
+        for i in range(0, len(str_output), 8):
+            # Convert string of 1's and 0's to base 2 integer
+            byte_array += \
+                    struct.pack('>B', int(str_output[i:i+8], 2))
+        print type(byte_array)
+        print len(byte_array)
+        print byte_array
+        return byte_array
     # Message callbacks
     def handshake(self, info_hash, peer_id):
         print 'Received handshake resp from peer:', peer_id
@@ -54,7 +87,9 @@ class Peer(object):
         except KeyError, e:
             print 'Closing conn; client not serving torrent {}.'.format(info_hash)
             self.conn.close()
-        self.conn.enqueue_msg(WireMessage.construct_msg(2))
+        self.conn.enqueue_msg(WireMessage.construct_msg(2)) # Interested
+        bitfield = self._build_bitfield()
+        #self.conn.enqueue_msg(WireMessage.construct_msg(5), bitfield) # Bitfield
     def keep_alive(self):
         print 'Received keep-alive'
     def choke(self):
@@ -111,10 +146,16 @@ class Peer(object):
         print 'Got request'
         pass
     def piece(self, index, begin, block):
-        print 'Got piece from {}. index was {} and begin was {}'.format(
-                self.peer_id, index, begin)
+        # print 'Got piece from {}. index was {} and begin was {}'.format(
+        #        self.peer_id, index, begin)
         # print 'block length was', len(block)
+        assert begin == 0 # TODO: Handle case when this is not true
+        try:
+            assert self._is_valid_block(block, index)
+        except AssertionError:
+            raise Exception('pieces[{}] had an invalid hash'.format(index))
         self.client.torrent.mark_block_received(index, begin, block)
+        self.send_have(index)
         self.send_cancel(index, begin, len(block))
     def cancel(self, index, begin, length):
         print 'Got cancel'
@@ -123,13 +164,21 @@ class Peer(object):
         print 'Got port'
         pass
     # Begin outbound messages
+    def send_have(self, index):
+        """Tell all peers that client has all blocks in piece[index].
+        """
+        msg = WireMessage.construct_msg(4, index)
+        self.conn.enqueue_msg(msg) # TODO: all peers
     def send_cancel(self, index, begin, length):
         msg = WireMessage.construct_msg(8, index, begin, length)
         self.conn.enqueue_msg(msg)
     def request_pieces(self, pieces):
         for i in range(len(pieces)):
-            piece_length = 16384
-            print '% Requesting piece with index {} %'.format(i)
+            if i != self.client.torrent.num_pieces-1:
+                piece_length = 16384
+            else:
+                piece_length = self.client.torrent.last_piece_length
+            # print '% Requesting piece with index {} %'.format(i)
             # If piece_length == block, length, offset can be 0
             msg = WireMessage.construct_msg(6, i, 0, piece_length)
             self.conn.enqueue_msg(msg)

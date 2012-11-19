@@ -51,7 +51,7 @@ class MsgConnection(object):
         """Send next msg in queue.
         """
         try:
-            msg = self._outbound.pop(0)
+            msg = self._outbound.pop()
         except IndexError:
             return False
         #print 'Sending message to {}:{}. Msg was {}'.format(
@@ -86,9 +86,9 @@ class MsgConnection(object):
                 else:
                     func()
             except AttributeError, e:
-                print e
                 # Todo - make sure AttributeError actually relates to func()
                 print 'Error: Invalid msg type {}'.format(msg[0])
+                raise Exception(e)
     def enqueue_msg(self, msg):
         self._outbound.append(msg)
     def close(self):
