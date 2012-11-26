@@ -1,5 +1,8 @@
 import hashlib
 
+class DownloadCompleteException(Exception):
+    pass
+
 def sha1_hash(string):
     """Return 20-byte sha1 hash of string.
     """

@@ -74,7 +74,7 @@ class MsgConnection(object):
             except Exception, e:
                 print 'Something went wrong with recv():', e
                 print self.ip, self.port
-                self.close()
+                #self.close()
                 break
             else:
                 if len(msg) == 0: break
@@ -99,5 +99,6 @@ class MsgConnection(object):
         self._outbound.append(msg)
     def close(self):
         self.socket.close()
+        self._parent.client.notify_closed(self._parent.peer_id)
     def fileno(self):
         return self.socket.fileno()

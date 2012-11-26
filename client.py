@@ -41,12 +41,12 @@ class Peer(object):
                     len(self.client.torrent.pieces)
                     )
             self.request_pieces(peer_has_pieces)
-    def _is_valid_block(self, block, index):
-        block_hash = util.sha1_hash(block)
+    def _is_valid_piece(self, piece, index):
+        piece_hash = util.sha1_hash(piece)
         expected_hash = self.client.torrent.pieces[index][0].piece_hash
         # print 'block_hash was', block_hash
         # print 'expected_hash was', expected_hash
-        return block_hash == expected_hash
+        return piece_hash == expected_hash
     def _build_bitfield(self):
         """Return at least len(pieces) bits as complete bytes.
 
@@ -151,20 +151,11 @@ class Peer(object):
         print 'Got request'
         pass
     def piece(self, index, begin, block):
-        print 'Got piece from {}. index was {} and begin was {}'.format(
-                self.peer_id, index, begin)
-        # print 'block length was', len(block)
-        assert begin == 0 # TODO: Handle case when this is not true
-        try:
-            assert self._is_valid_block(block, index)
-        except AssertionError:
-            err = 'pieces[{}] had an invalid hash'.format(index)
-            print err
-            #raise Exception(err)
-        else:
-            self.client.torrent.mark_block_received(index, begin, block)
+        print 'Got piece from {} with index {}; begin {}; length {}'.format(
+                self.peer_id, index, begin, len(block))
+        if self.client.torrent.mark_block_received(index, begin, block):
             self.send_have(index)
-            self.send_cancel(index, begin, len(block))
+        self.send_cancel(index, begin, len(block))
     def cancel(self, index, begin, length):
         print 'Got cancel'
         pass
@@ -181,16 +172,16 @@ class Peer(object):
         msg = WireMessage.construct_msg(8, index, begin, length)
         self.conn.enqueue_msg(msg)
     def request_pieces(self, pieces):
-        for i in range(len(pieces)):
-            if i != self.client.torrent.num_pieces-1:
-                piece_length = self.client.torrent.piece_length
-            else:
-                piece_length = self.client.torrent.last_piece_length
-            print '% Requesting piece with index {} and length {} %'.format(
-                    i, piece_length)
-            # If piece_length == block, length, offset can be 0
-            msg = WireMessage.construct_msg(6, i, 0, piece_length)
-            self.conn.enqueue_msg(msg)
+        for piece, peer_id in pieces:
+            # print 'num blocks', len(piece.blocks)
+            for block in piece.blocks.values():
+                #print 'block was', block
+                print '% Requesting pi {}, offset {} and block length {} %'.format(
+                       piece.index, block.begin, block.length)
+
+                msg = WireMessage.construct_msg(
+                        6, piece.index, block.begin, block.length)
+                self.conn.enqueue_msg(msg)
     def set_interested(self, am_interested):
         """Change client's interest in peer based upon
             value of am_interested argument.
@@ -243,6 +234,13 @@ class Client(object):
         self.torrents[info_hash] = torrent
     def stop_serving(self, info_hash):
         del self.torrents[info_hash]
+    def notify_closed(self, peer_id):
+        """Callback for peer to inform client that it has
+            disconnected.
+        """
+        self._reactor.remove_subscriber(peer_id)
+        del self.peers[peer_id]
+        print 'Removed {} from peers.'.format(peer_id)
     def register_callback(self, callback):
         self._reactor.add_callback(callback)
     def connect_to_peers(self, peer_list):

@@ -1,11 +1,13 @@
 import select
-
+from util import DownloadCompleteException
 class Reactor():
     def __init__(self):
         self._subscribers = {} # {peer_id: class instance}
         self._timers = []
     def add_callback(self, callback):
         self._timers.append(callback)
+    def remove_subscriber(self, subscriber_id):
+        del self._subscribers[subscriber_id]
     def add_torrent(self, torrent):
         """Add torrent's client peers to the event loop.
         """
@@ -30,7 +32,10 @@ class Reactor():
             readable, writeable, exceptional = select.select(inputs, outputs, inputs, timeout)
             
             for s in readable:
-                s.recv_msg()
+                try:
+                    s.recv_msg()
+                except DownloadCompleteException, e:
+                    return
             for s in writeable:
                 s.send_next_msg()
             for s in exceptional:

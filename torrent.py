@@ -9,15 +9,18 @@ from tracker import Tracker
 class Block(object):
     """Abstract away data storage.
     """
-    def __init__(self, piece, begin, data):
-        self._begin = begin
-        self._length = len(data)
-        self._data = data
-        base_pos = piece.index*piece.block_size
-        piece.torrent.out_file.seek(base_pos + begin)
+    def __init__(self, piece, begin, length):
+        self.piece = piece
+        self.begin = begin
+        self.length = length
+        self.base_pos = self.piece.index*self.piece.block_size
+        self.received = False
+    def write(self, data):
+        self.piece.torrent.out_file.seek(self.base_pos + self.begin)
         # print 'Writing block from piece[{}] to position {}'.format(
         #        piece.index, base_pos+begin)
-        piece.torrent.out_file.write(data)
+        self.piece.torrent.out_file.write(data)
+        self.received = True
 
 class Piece(object):
     """A piece consists of block_size/file_length+1 blocks.
@@ -28,21 +31,38 @@ class Piece(object):
         self.torrent = torrent
         self.index = index
         self.piece_hash = piece_hash
-        self._pieces_added = 0
-        self._blocks = []
-        num_blocks = self.torrent.piece_length / block_size
-        if self.torrent.piece_length % num_blocks != 0:
-            num_blocks += 1 # Compensate for partially full last block
         self.block_size = block_size
-    def add_block(self, begin, data):
+        self.blocks = {}
+        self.num_blocks = self.torrent.piece_length / self.block_size
+        # Compensate for partially full last block
+        if self.torrent.piece_length % self.num_blocks != 0:
+            self.num_blocks += 1
+        self.last_block_length = self.torrent.last_piece_length % \
+                self.block_size or self.block_size
+        begin = 0
+        for i in range(self.num_blocks):
+            length = self.block_size
+            if self.index == self.torrent.num_pieces - 1:
+                if i == self.num_blocks - 1: # Last block
+                    length = self.last_block_length
+            self.blocks[begin] = Block(self, begin, length)
+            begin += self.block_size
+        self.num_blocks_received = 0
+    def write_to_block(self, begin, data):
         length = len(data)
         end = begin + length
-        new_block = Block(self, begin, data)
-        self._blocks.append(new_block)
-        try:
-            assert length == self.block_size
-        except AssertionError:
-            self.torrent.out_file.close()
+        self.blocks[begin].write(data)
+        self.num_blocks_received += 1
+        if self.num_blocks_received == self.num_blocks:
+            return True
+        return False
+    def is_valid(self):
+        """Return true if the hash of all blocks checks out; false if not.
+        """
+        self.torrent.out_file.seek(self.index*self.block_size)
+        actual_hash = util.sha1_hash(
+                self.torrent.out_file.read(self.torrent.piece_length))
+        return actual_hash == self.piece_hash
 
 class Torrent(object):
     def __init__(self, reactor, file_name, info_dict=None):
@@ -55,7 +75,7 @@ class Torrent(object):
         self.info_hash = util.sha1_hash(
             bencode.bencode(self.info_dict['info']) # metainfo file is bencoded
             )
-        self.out_file = open(self.info_dict['info']['name'], 'w')
+        self.out_file = open(self.info_dict['info']['name'], 'r+')
         self.piece_length = self.info_dict['info']['piece length']
         pieces = self.info_dict['info']['pieces']
         self.pieces_hashes = list(self._read_pieces_hashes(pieces))
@@ -81,26 +101,31 @@ class Torrent(object):
         self.client.connect_to_peers(
                 self._new_peers(self._get_peers(resp), self.client)
                 )
-    def mark_block_received(self, index, begin, block):
-        """If block isn't already stored, store it.
-
-        Number of pieces is fixed; no need for Piece instance to know
-         what its index is.
-
+    def mark_block_received(self, piece_index, begin, block):
+        """Return true if entire piece received and verified; false if not.
         """
-        piece = self.pieces[index][0]
-        if piece.received:
-            return
+        piece = self.pieces[piece_index][0]
+        if piece.blocks[begin].received: # Already have this block
+            return False
+        if not piece.write_to_block(begin, block):
+            print 'Received {} of {} blocks in piece {}'.format(
+                    piece.num_blocks_received,
+                    piece.num_blocks,
+                    piece.index)
+            return False
 
-        piece.add_block(begin, block)
-        piece.received = True
+        # Entire piece received
         self._pieces_added += 1
+        piece.received = True
+        assert piece.is_valid()
         if self._pieces_added >= self.num_pieces:
             print '*****ALL PIECES RECEIVED*****'
+            self.out_file.close()
+            raise util.DownloadCompleteException()
         else:
-            pass
-            # print '* {} of {} pieces received*'.format(
-            #        self._pieces_added, self.num_pieces)
+            print '* {} of {} pieces received*'.format(
+                    self._pieces_added, self.num_pieces)
+        return True
     def pieces_by_rarity(self, peer_id=None):
         """Return list of piece indices, where
             the i-th item is the i-th rarest.
