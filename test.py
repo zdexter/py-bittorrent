@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-from torrent import Torrent
+from bt.torrent import Torrent
 import argparse
-from reactor import Reactor
+from bt.reactor import Reactor
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

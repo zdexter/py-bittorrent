@@ -47,6 +47,10 @@ class MsgConnection(object):
         print('Success: Socket opened to {}:{}'.format(
             ip, port
             ))
+    def has_next_msg(self):
+        # if len(self._outbound) > 0:
+        #    print 'len(self._outbound) was', len(self._outbound)
+        return len(self._outbound) > 0
     def send_next_msg(self):
         """Send next msg in queue.
         """
@@ -98,7 +102,7 @@ class MsgConnection(object):
     def enqueue_msg(self, msg):
         self._outbound.append(msg)
     def close(self):
-        self.socket.close()
         self._parent.client.notify_closed(self._parent.peer_id)
+        self.socket.close()
     def fileno(self):
         return self.socket.fileno()

@@ -15,11 +15,12 @@ class Block(object):
         self.length = length
         self.base_pos = self.piece.index*self.piece.block_size
         self.received = False
+        self.times_requested = 0
     def write(self, data):
-        self.piece.torrent.out_file.seek(self.base_pos + self.begin)
+        self.piece.torrent.tmp_file.seek(self.base_pos + self.begin)
         # print 'Writing block from piece[{}] to position {}'.format(
         #        piece.index, base_pos+begin)
-        self.piece.torrent.out_file.write(data)
+        self.piece.torrent.tmp_file.write(data)
         self.received = True
 
 class Piece(object):
@@ -56,13 +57,32 @@ class Piece(object):
         if self.num_blocks_received == self.num_blocks:
             return True
         return False
+    def suggest_blocks(self, num_to_suggest=1):
+        """Suggest those X blocks which have been requested
+            the fewest number of times, and have not been received.
+        """
+        blocks = sorted(
+                self.blocks.values(), key=lambda b: b.times_requested)
+        s = filter(lambda b: b.received==False, blocks)[:num_to_suggest]
+        for b in s:
+            b.times_requested += 1
+        print '&&& Suggesting {} blocks'.format(len(s))
+        return s
+
     def is_valid(self):
         """Return true if the hash of all blocks checks out; false if not.
         """
-        self.torrent.out_file.seek(self.index*self.block_size)
+        self.torrent.tmp_file.seek(self.index*self.block_size)
         actual_hash = util.sha1_hash(
-                self.torrent.out_file.read(self.torrent.piece_length))
+                self.torrent.tmp_file.read(self.torrent.piece_length))
         return actual_hash == self.piece_hash
+
+class File(object):
+    def __init__(self, piece_length, path, length):
+        self.path = ''.join(path)
+        self.last_piece_length = length % piece_length or piece_length
+        self.ref = open(self.path, 'w+')
+        self.length = length
 
 class Torrent(object):
     def __init__(self, reactor, file_name, info_dict=None):
@@ -75,19 +95,26 @@ class Torrent(object):
         self.info_hash = util.sha1_hash(
             bencode.bencode(self.info_dict['info']) # metainfo file is bencoded
             )
-        self.out_file = open(self.info_dict['info']['name'], 'r+')
         self.piece_length = self.info_dict['info']['piece length']
+        self.last_piece_length = self.length() % self.piece_length or self.piece_length
         pieces = self.info_dict['info']['pieces']
         self.pieces_hashes = list(self._read_pieces_hashes(pieces))
         self.num_pieces = len(self.pieces_hashes)
+        # assert len(self.pieces_hashes) == self.num_pieces
+        # assert (self.num_pieces-1) * self.piece_length + self.last_piece_length \
+        #        == file_length
+        self.files = []
         try:
-            file_length = self.info_dict['info']['length']
-        except KeyError: # Multi-file
-            file_length = self.info_dict['info']['files'][0]['length']
-        self.last_piece_length = file_length % self.piece_length or self.piece_length
-        assert len(self.pieces_hashes) == self.num_pieces
-        assert (self.num_pieces-1) * self.piece_length + self.last_piece_length \
-                == file_length
+            self.files.append(File(
+                self.piece_length,
+                self.info_dict['info']['name'],
+                self.info_dict['info']['length']))
+        except KeyError:
+            for f in self.info_dict['info']['files']:
+                self.files.append(File(self.piece_length, f['path'], f['length']))
+
+        self.tmp_file = open(
+                'temp.tmp', 'w+')
         """ Data structure for easy lookup of piece rarity
             pieces[hash] has list of Peer instances with that piece
             Get rarity: len(pieces[hash])
@@ -120,20 +147,28 @@ class Torrent(object):
         assert piece.is_valid()
         if self._pieces_added >= self.num_pieces:
             print '*****ALL PIECES RECEIVED*****'
-            self.out_file.close()
+            self._write_to_disk()
             raise util.DownloadCompleteException()
         else:
             print '* {} of {} pieces received*'.format(
                     self._pieces_added, self.num_pieces)
         return True
+    def _write_to_disk(self):
+        start = 0
+        for f in self.files:
+            new_file = f.ref
+            self.tmp_file.seek(start)
+            new_file.write(self.tmp_file.read(f.length))
+            start += f.length
+
     def pieces_by_rarity(self, peer_id=None):
-        """Return list of piece indices, where
-            the i-th item is the i-th rarest.
+        """Return array of (piece objects, peers who have them)
+            tuples where the i-th item is the i-th rarest.
 
             Optionally return such a list for a single peer.
 
         """
-        print 'Sorting {} pieces'.format(len(self.pieces))
+        # print 'Sorting {} pieces'.format(len(self.pieces))
         pieces = sorted(self.pieces, key=lambda x: len(x[1]))
         if peer_id:
             pieces = filter(lambda x: peer_id in x[1], pieces)

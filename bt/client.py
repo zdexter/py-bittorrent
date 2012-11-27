@@ -1,15 +1,16 @@
 import socket
 import time
 import util
-import struct
 from conn import MsgConnection, AcceptConnection
 from message import WireMessage
+from util import Bitfield
 
 class Peer(object):
     def __init__(self, ip, port, client, peer_id=None, conn=None):
         self.ip = ip
         self.port = port
         self.client = client
+        self.outstanding_requests = 0
 
         if peer_id:
             self.peer_id = peer_id
@@ -28,10 +29,10 @@ class Peer(object):
         
     def add_conn(self, conn):
         self.conn = conn
-    def _request_peer_pieces(self):
+    def request_pieces(self):
         """Ask this peer for each piece it has that we're interested in.
         """
-        peer_has_pieces = self.client.torrent.pieces_by_rarity(self.peer_id)
+        peer_has_pieces = self.client.torrent.pieces_by_rarity()
         if len(peer_has_pieces) > 0:
             # Declare interest to remote peer
             self.set_interested(True)
@@ -40,42 +41,11 @@ class Peer(object):
                     len(peer_has_pieces),
                     len(self.client.torrent.pieces)
                     )
-            self.request_pieces(peer_has_pieces)
+            self.request_blocks(peer_has_pieces)
     def _is_valid_piece(self, piece, index):
         piece_hash = util.sha1_hash(piece)
         expected_hash = self.client.torrent.pieces[index][0].piece_hash
-        # print 'block_hash was', block_hash
-        # print 'expected_hash was', expected_hash
         return piece_hash == expected_hash
-    def _build_bitfield(self):
-        """Return at least len(pieces) bits as complete bytes.
-
-           Bit at position i represents client's posession (1)
-            or lack (0) of the data at pieces[i].
-
-        """
-        received = [x[0].received for x in self.client.torrent.pieces]
-        assert len(received) == self.client.torrent.num_pieces
-        str_output = ""
-        for b in received:
-            str_output += "1" if b else "0"
-        difference = self.client.torrent.num_pieces - len(str_output)
-        while len(str_output) % 8 != 0:
-            str_output += "0"
-        #print 'len(str_output) was', len(str_output)
-        byte_array = ""
-        for i in range(0, len(str_output), 8):
-            # Convert string of 1's and 0's to base 2 integer
-            # print 'adding', repr(struct.pack('>B', int(str_output[i:i+8], 2)))
-            byte_array += \
-                    struct.pack('>B', int(str_output[i:i+8], 2))
-        """
-        print type(byte_array)
-        print 'byte array len was', len(byte_array)
-        bits = ''.join(str(bit) for bit in self._bits(byte_array))
-        assert len(byte_array) == self.client.torrent.num_pieces / 8
-        """
-        return byte_array
     # Message callbacks
     def handshake(self, info_hash, peer_id):
         print 'info_hash was', info_hash
@@ -92,9 +62,13 @@ class Peer(object):
             print 'Closing conn; client not serving torrent {}.'.format(info_hash)
             self.conn.close()
         self.conn.enqueue_msg(WireMessage.construct_msg(2)) # Interested
-        bitfield = self._build_bitfield()
+        bitfield = Bitfield(
+            [x[0].received for x in self.client.torrent.pieces],
+            self.client.torrent.num_pieces).byte_array
         # print 'bitfield repr was', repr(bitfield)
         self.conn.enqueue_msg(WireMessage.construct_msg(5, bitfield)) # Bitfield
+    def bitfield(self, bitfield):
+        Bitfield.parse(self, bitfield)
     def keep_alive(self):
         print 'Received keep-alive'
     def choke(self):
@@ -102,9 +76,10 @@ class Peer(object):
         self.choking = True
     def unchoke(self):
         print 'Received unchoke'
-        self._request_peer_pieces()
+        self.request_pieces()
     def interested(self):
         print 'Received interested'
+        raise Exception("got interested msg")
         self.interested = True
     def not_interested(self):
         print 'Received not interested';
@@ -116,37 +91,7 @@ class Peer(object):
             raise Exception('Peer reporting too many pieces in "have."')
         # print 'Received have {}'.format(piece_index)
         self.client.torrent.decrease_rarity(piece_index,self.peer_id)
-        self._request_peer_pieces()
-    def _bits(self, data):
-        data_bytes = (ord(b) for b in data)
-        for b in data_bytes:
-            """Get bit by reducing b by 2^i.
-               Bitwise AND outputs 1s and 0s as strings.
-            """
-            for i in reversed(xrange(8)): # msb on left
-                yield (b >> i) & 1
-    def bitfield(self, bitfield):
-        """Decrease piece rarity for each piece the peer reports it has.
-        """
-        # print 'Received bitfield'
-        bitfield_length = len(bitfield)
-        bits = ''.join(str(bit) for bit in self._bits(bitfield))
-        # Trim spare bits
-        pieces_length = len(self.client.torrent.pieces)
-        try:
-            """ Sanity check: do peer & client expect same # of pieces?
-                Check extra bits only.
-            """
-            assert len(filter(lambda b: b=='1', bits[pieces_length:])) == 0
-        except AssertionError:
-            raise Exception('Peer reporting too many pieces in "bitfield."')
-
-        bits = bits[:pieces_length]
-        # Modify torrent state with new information
-        for i in range(len(bits)):
-            bit = bits[i]
-            if bit == '1':
-                self.client.torrent.decrease_rarity(i,self.peer_id)
+        #self._request_peer_pieces()
     def request(self, index, begin, length):
         print 'Got request'
         pass
@@ -154,8 +99,11 @@ class Peer(object):
         print 'Got piece from {} with index {}; begin {}; length {}'.format(
                 self.peer_id, index, begin, len(block))
         if self.client.torrent.mark_block_received(index, begin, block):
+            # If piece is now complete
             self.send_have(index)
-        self.send_cancel(index, begin, len(block))
+        self.outstanding_requests -= 1
+        self.request_pieces()
+        #self.send_cancel(index, begin, len(block))
     def cancel(self, index, begin, length):
         print 'Got cancel'
         pass
@@ -163,6 +111,9 @@ class Peer(object):
         print 'Got port'
         pass
     # Begin outbound messages
+    def send_keep_alive(self):
+        msg = WireMessage.construct_msg(-1)
+        self.conn.enqueue_msg(msg)
     def send_have(self, index):
         """Tell all peers that client has all blocks in piece[index].
         """
@@ -171,11 +122,13 @@ class Peer(object):
     def send_cancel(self, index, begin, length):
         msg = WireMessage.construct_msg(8, index, begin, length)
         self.conn.enqueue_msg(msg)
-    def request_pieces(self, pieces):
+    def request_blocks(self, pieces, max_requests=1):
+        if self.outstanding_requests > max_requests:
+            return False
         for piece, peer_id in pieces:
-            # print 'num blocks', len(piece.blocks)
-            for block in piece.blocks.values():
-                #print 'block was', block
+            blocks = piece.suggest_blocks()
+            self.outstanding_requests += len(blocks)
+            for block in blocks:
                 print '% Requesting pi {}, offset {} and block length {} %'.format(
                        piece.index, block.begin, block.length)
 

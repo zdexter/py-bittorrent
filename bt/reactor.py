@@ -38,8 +38,13 @@ class Reactor():
                     return
             for s in writeable:
                 s.send_next_msg()
+                #while s.has_next_msg():
+                #    s.send_next_msg()
             for s in exceptional:
                 print 'Exceptional', s
             
             for t in self._timers:
                 t()
+
+            inputs = self._subscribers.values()
+            outputs = self._subscribers.values()

@@ -94,7 +94,7 @@ class WireMessage(object):
             elif msg_id == 7: # End of piece
                 print 'fmt was', fmt
                 print 'expected_length was', expected_length
-                fmt.replace(str(expected_length+6), str(actual_length))
+                fmt = fmt.replace(str(expected_length-8), str(actual_length))
                 print 'fmt was', fmt
                 print 'actual_length was', actual_length
                 args = (x for x in struct.unpack(fmt, buf[5:actual_length]))
