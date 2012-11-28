@@ -34,12 +34,28 @@ class Piece(object):
         self.piece_hash = piece_hash
         self.block_size = block_size
         self.blocks = {}
-        self.num_blocks = self.torrent.piece_length / self.block_size
-        # Compensate for partially full last block
-        if self.torrent.piece_length % self.num_blocks != 0:
+        
+        self.last_block_length = self.block_size
+        # Last piece may have fewer blocks
+        piece_length = self.torrent.piece_length
+        if self.index == self.torrent.num_pieces - 1:
+            piece_length = self.torrent.last_piece_length
+            self.last_block_length = self.torrent.last_piece_length % \
+                    self.block_size or self.block_size
+        # Last block may have fewer bytes
+        self.num_blocks = piece_length / self.block_size
+        
+        # If piece length == block length, first condition will be true
+        #  If so, short-circuit
+        if self.num_blocks == 0 \
+                or piece_length % self.num_blocks != 0:
             self.num_blocks += 1
-        self.last_block_length = self.torrent.last_piece_length % \
-                self.block_size or self.block_size
+        """
+        print 'piece_length {}, num_blocks {}'.format(
+                piece_length, self.num_blocks)
+        print 'Piece {} has {} blocks and last length {}.'.format(
+                self.index, self.num_blocks, self.last_block_length)
+        """
         begin = 0
         for i in range(self.num_blocks):
             length = self.block_size
@@ -57,7 +73,7 @@ class Piece(object):
         if self.num_blocks_received == self.num_blocks:
             return True
         return False
-    def suggest_blocks(self, num_to_suggest=1):
+    def suggest_blocks(self, num_to_suggest):
         """Suggest those X blocks which have been requested
             the fewest number of times, and have not been received.
         """
@@ -128,6 +144,9 @@ class Torrent(object):
         self.client.connect_to_peers(
                 self._new_peers(self._get_peers(resp), self.client)
                 )
+        print 'piece length {} and last piece length {}'.format(
+                self.piece_length, self.last_piece_length)
+        print 'length was', self.length()
     def mark_block_received(self, piece_index, begin, block):
         """Return true if entire piece received and verified; false if not.
         """
@@ -144,7 +163,7 @@ class Torrent(object):
         # Entire piece received
         self._pieces_added += 1
         piece.received = True
-        assert piece.is_valid()
+        #assert piece.is_valid()
         if self._pieces_added >= self.num_pieces:
             print '*****ALL PIECES RECEIVED*****'
             self._write_to_disk()
@@ -160,6 +179,8 @@ class Torrent(object):
             self.tmp_file.seek(start)
             new_file.write(self.tmp_file.read(f.length))
             start += f.length
+            print 'Writing to {}, start {}, length {}'.format(
+                    f.path, start, f.length)
 
     def pieces_by_rarity(self, peer_id=None):
         """Return array of (piece objects, peers who have them)

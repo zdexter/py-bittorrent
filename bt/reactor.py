@@ -37,9 +37,8 @@ class Reactor():
                 except DownloadCompleteException, e:
                     return
             for s in writeable:
-                s.send_next_msg()
-                #while s.has_next_msg():
-                #    s.send_next_msg()
+                while s.has_next_msg():
+                    s.send_next_msg()
             for s in exceptional:
                 print 'Exceptional', s
             

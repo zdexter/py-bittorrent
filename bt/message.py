@@ -73,34 +73,29 @@ class WireMessage(object):
         except AssertionError:
             pass
 
-        expected_length, msg_id = struct.unpack("!IB", buf[:5])
-
+        # First 5 bytes are always <4:total_message_length><1:msg_id>
+        total_message_length, msg_id = struct.unpack("!IB", buf[:5])
+        # Advance buffer to payload
+        buf = buf[5:]
+        # Calculate args and payload length
         fmt = '!' + cls.MESSAGE_TYPES[msg_id][1][3:] # Ignore length prefix
-        args = None
-        expected_length -= 1
-        actual_length = None
-        if msg_id == 7 or msg_id == 5:
-            # Msg typ has variable length
+        args_and_payload_length = total_message_length - 1 # Discount msg_id byte
+        args_and_payload = buf[:args_and_payload_length]
+
+        # If there is a payload, this block will handle it.
+        payload_length = args_and_payload_length # If only args; i.e., if no payload
+        if msg_id == 7 or msg_id == 5: # Variable-length payload. Append length arg to fmt 
             if msg_id == 7:
-                fmt += str(expected_length-8) + "s"
-            elif msg_id == 5:
-                fmt += str(expected_length) + "s"
-        if fmt:
-            actual_length = len(buf[5:5+expected_length])
-            #print 'actual', actual_length, 'expected', expected_length,\
-            #    'msg_id', msg_id
-            if expected_length == actual_length:
-                args = (x for x in struct.unpack(fmt, buf[5:5+expected_length]))
-            elif msg_id == 7: # End of piece
-                print 'fmt was', fmt
-                print 'expected_length was', expected_length
-                fmt = fmt.replace(str(expected_length-8), str(actual_length))
-                print 'fmt was', fmt
-                print 'actual_length was', actual_length
-                args = (x for x in struct.unpack(fmt, buf[5:actual_length]))
+                # <len=0009+X><id=7><4:index><4:begin><4:length>
+                # Value of <4:length> does not include the 8 bytes in <4:index><4:begin>
+                payload_length -= 8
+            fmt += str(payload_length) + "s" 
+
+        args = None
+        args = (x for x in struct.unpack(fmt, args_and_payload))
+        # Advance buffer past payload
+        buf = buf[args_and_payload_length:] 
         try:
-            length = actual_length or expected_length
-            buf = buf[5+length:] # Advanced to next message
             # Get func name by message id
             return (cls.MESSAGE_TYPES[msg_id][0], args), buf
         except IndexError:
@@ -145,6 +140,6 @@ class WireMessage(object):
                 ', fmt was', fmt, \
                 ' and length was', length
             raise Exception(e)
-        if msg_id == 5:
-            print 'repr of packed was', repr(packed)
+        # if msg_id == 5:
+        #     print 'repr of packed was', repr(packed)
         return packed

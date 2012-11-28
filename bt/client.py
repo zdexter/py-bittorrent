@@ -35,13 +35,13 @@ class Peer(object):
         peer_has_pieces = self.client.torrent.pieces_by_rarity()
         if len(peer_has_pieces) > 0:
             # Declare interest to remote peer
-            self.set_interested(True)
             print 'Peer "{}" has {} of {} pieces.'.format(
                     self.peer_id,
                     len(peer_has_pieces),
                     len(self.client.torrent.pieces)
                     )
             self.request_blocks(peer_has_pieces)
+            self.set_interested(True)
     def _is_valid_piece(self, piece, index):
         piece_hash = util.sha1_hash(piece)
         expected_hash = self.client.torrent.pieces[index][0].piece_hash
@@ -62,11 +62,13 @@ class Peer(object):
             print 'Closing conn; client not serving torrent {}.'.format(info_hash)
             self.conn.close()
         self.conn.enqueue_msg(WireMessage.construct_msg(2)) # Interested
-        bitfield = Bitfield(
-            [x[0].received for x in self.client.torrent.pieces],
-            self.client.torrent.num_pieces).byte_array
-        # print 'bitfield repr was', repr(bitfield)
-        self.conn.enqueue_msg(WireMessage.construct_msg(5, bitfield)) # Bitfield
+
+        pieces_received = [x[0].received for x in self.client.torrent.pieces]
+        if len(filter(lambda x: x, pieces_received)) > 0:
+            bitfield = Bitfield(pieces_received, self.client.torrent.num_pieces).byte_array
+            # print 'bitfield repr was', repr(bitfield)
+            self.conn.enqueue_msg(WireMessage.construct_msg(5, bitfield)) # Bitfield
+
     def bitfield(self, bitfield):
         Bitfield.parse(self, bitfield)
     def keep_alive(self):
@@ -126,7 +128,7 @@ class Peer(object):
         if self.outstanding_requests > max_requests:
             return False
         for piece, peer_id in pieces:
-            blocks = piece.suggest_blocks()
+            blocks = piece.suggest_blocks(max_requests)
             self.outstanding_requests += len(blocks)
             for block in blocks:
                 print '% Requesting pi {}, offset {} and block length {} %'.format(
