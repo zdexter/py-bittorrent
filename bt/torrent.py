@@ -13,13 +13,12 @@ class Block(object):
         self.piece = piece
         self.begin = begin
         self.length = length
-        self.base_pos = self.piece.index*self.piece.block_size
         self.received = False
         self.times_requested = 0
     def write(self, data):
-        self.piece.torrent.tmp_file.seek(self.base_pos + self.begin)
-        # print 'Writing block from piece[{}] to position {}'.format(
-        #        piece.index, base_pos+begin)
+        self.piece.torrent.tmp_file.seek(self.piece.start_pos + self.begin)
+        #print 'WRITE to {}: base_pos {}, begin {}'.format(
+        #        self.piece.index, self.piece.base_pos, self.begin)
         self.piece.torrent.tmp_file.write(data)
         self.received = True
 
@@ -37,25 +36,19 @@ class Piece(object):
         
         self.last_block_length = self.block_size
         # Last piece may have fewer blocks
-        piece_length = self.torrent.piece_length
+        self.piece_length = self.torrent.piece_length
         if self.index == self.torrent.num_pieces - 1:
-            piece_length = self.torrent.last_piece_length
+            self.piece_length = self.torrent.last_piece_length
             self.last_block_length = self.torrent.last_piece_length % \
                     self.block_size or self.block_size
         # Last block may have fewer bytes
-        self.num_blocks = piece_length / self.block_size
+        self.num_blocks = self.piece_length / self.block_size
         
         # If piece length == block length, first condition will be true
         #  If so, short-circuit
         if self.num_blocks == 0 \
-                or piece_length % self.num_blocks != 0:
+                or self.piece_length % self.num_blocks != 0:
             self.num_blocks += 1
-        """
-        print 'piece_length {}, num_blocks {}'.format(
-                piece_length, self.num_blocks)
-        print 'Piece {} has {} blocks and last length {}.'.format(
-                self.index, self.num_blocks, self.last_block_length)
-        """
         begin = 0
         for i in range(self.num_blocks):
             length = self.block_size
@@ -63,8 +56,13 @@ class Piece(object):
                 if i == self.num_blocks - 1: # Last block
                     length = self.last_block_length
             self.blocks[begin] = Block(self, begin, length)
+            #print 'block {} in piece {} begins at {} and goes for {}'.format(
+            #        i, self.index, begin, length)
             begin += self.block_size
         self.num_blocks_received = 0
+        # Even if this is the last piece, we start at a multiple
+        #  of the non-last piece length.
+        self.start_pos = self.index * self.torrent.piece_length
     def write_to_block(self, begin, data):
         length = len(data)
         end = begin + length
@@ -82,15 +80,18 @@ class Piece(object):
         s = filter(lambda b: b.received==False, blocks)[:num_to_suggest]
         for b in s:
             b.times_requested += 1
-        print '&&& Suggesting {} blocks'.format(len(s))
+        #print '&&& Suggesting {} blocks'.format(len(s))
         return s
 
     def is_valid(self):
-        """Return true if the hash of all blocks checks out; false if not.
+        """Return true if the hash of this entire piece is what we expected.
         """
-        self.torrent.tmp_file.seek(self.index*self.block_size)
-        actual_hash = util.sha1_hash(
-                self.torrent.tmp_file.read(self.torrent.piece_length))
+        self.torrent.tmp_file.seek(self.start_pos)
+        # ... but we read only the # of bytes this piece actually has.
+        f = self.torrent.tmp_file.read(self.piece_length)
+        print 'HASH: length of piece {} was {}'.format(
+                self.index, len(f))
+        actual_hash = util.sha1_hash(f)
         return actual_hash == self.piece_hash
 
 class File(object):
@@ -116,7 +117,7 @@ class Torrent(object):
         pieces = self.info_dict['info']['pieces']
         self.pieces_hashes = list(self._read_pieces_hashes(pieces))
         self.num_pieces = len(self.pieces_hashes)
-        # assert len(self.pieces_hashes) == self.num_pieces
+        assert len(self.pieces_hashes) == self.num_pieces
         # assert (self.num_pieces-1) * self.piece_length + self.last_piece_length \
         #        == file_length
         self.files = []
@@ -125,9 +126,13 @@ class Torrent(object):
                 self.piece_length,
                 self.info_dict['info']['name'],
                 self.info_dict['info']['length']))
+            print 'Appended file {} of length {}'.format(
+                    self.info_dict['info']['name'], self.info_dict['info']['length'])
         except KeyError:
             for f in self.info_dict['info']['files']:
                 self.files.append(File(self.piece_length, f['path'], f['length']))
+                print 'Appended file {} of length {}'.format(
+                        f['path'][len(f['path'])-1], f['length'])
 
         self.tmp_file = open(
                 'temp.tmp', 'w+')
@@ -137,6 +142,8 @@ class Torrent(object):
         """
         self.pieces = [
                 (Piece(self, i, self.pieces_hashes[i]), []) for i in range(self.num_pieces)]
+        for p, _ in self.pieces:
+            print 'Piece {} has length {}.'.format(p.index, p.piece_length)
         self._pieces_added = 0
         self.client = Client(reactor, {self.info_hash: self})
         self.tracker = Tracker(self, self.client)
@@ -163,7 +170,7 @@ class Torrent(object):
         # Entire piece received
         self._pieces_added += 1
         piece.received = True
-        #assert piece.is_valid()
+        assert piece.is_valid()
         if self._pieces_added >= self.num_pieces:
             print '*****ALL PIECES RECEIVED*****'
             self._write_to_disk()
@@ -178,9 +185,9 @@ class Torrent(object):
             new_file = f.ref
             self.tmp_file.seek(start)
             new_file.write(self.tmp_file.read(f.length))
-            start += f.length
             print 'Writing to {}, start {}, length {}'.format(
                     f.path, start, f.length)
+            start += f.length
 
     def pieces_by_rarity(self, peer_id=None):
         """Return array of (piece objects, peers who have them)

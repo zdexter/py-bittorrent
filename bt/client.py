@@ -35,11 +35,12 @@ class Peer(object):
         peer_has_pieces = self.client.torrent.pieces_by_rarity()
         if len(peer_has_pieces) > 0:
             # Declare interest to remote peer
-            print 'Peer "{}" has {} of {} pieces.'.format(
+            """print 'Peer "{}" has {} of {} pieces.'.format(
                     self.peer_id,
                     len(peer_has_pieces),
                     len(self.client.torrent.pieces)
                     )
+            """
             self.request_blocks(peer_has_pieces)
             self.set_interested(True)
     def _is_valid_piece(self, piece, index):
@@ -98,8 +99,8 @@ class Peer(object):
         print 'Got request'
         pass
     def piece(self, index, begin, block):
-        print 'Got piece from {} with index {}; begin {}; length {}'.format(
-                self.peer_id, index, begin, len(block))
+        #print 'Got piece from {} with index {}; begin {}; length {}'.format(
+        #        self.peer_id, index, begin, len(block))
         if self.client.torrent.mark_block_received(index, begin, block):
             # If piece is now complete
             self.send_have(index)
