@@ -5,11 +5,13 @@ import urllib2
 from collections import OrderedDict
 from client import Client, Peer
 from tracker import Tracker
+import logging
 
 class Block(object):
     """Abstract away data storage.
     """
     def __init__(self, piece, begin, length):
+        self.logger = logging.getLogger('bt.torrent.Block')
         self.piece = piece
         self.begin = begin
         self.length = length
@@ -17,8 +19,8 @@ class Block(object):
         self.times_requested = 0
     def write(self, data):
         self.piece.torrent.tmp_file.seek(self.piece.start_pos + self.begin)
-        #print 'WRITE to {}: base_pos {}, begin {}'.format(
-        #        self.piece.index, self.piece.base_pos, self.begin)
+        self.logger.debug('WRITE to {}: start_pos {}, begin {}'.format(
+            self.piece.index, self.piece.start_pos, self.begin))
         self.piece.torrent.tmp_file.write(data)
         self.received = True
 
@@ -26,6 +28,7 @@ class Piece(object):
     """A piece consists of block_size/file_length+1 blocks.
     """
     def __init__(self, torrent, index, piece_hash, block_size=16384):
+        self.logger = logging.getLogger('bt.torrent.Piece')
         # Set up the expected begin indices of all blocks.
         self.received = False
         self.torrent = torrent
@@ -56,8 +59,6 @@ class Piece(object):
                 if i == self.num_blocks - 1: # Last block
                     length = self.last_block_length
             self.blocks[begin] = Block(self, begin, length)
-            #print 'block {} in piece {} begins at {} and goes for {}'.format(
-            #        i, self.index, begin, length)
             begin += self.block_size
         self.num_blocks_received = 0
         # Even if this is the last piece, we start at a multiple
@@ -80,7 +81,7 @@ class Piece(object):
         s = filter(lambda b: b.received==False, blocks)[:num_to_suggest]
         for b in s:
             b.times_requested += 1
-        #print '&&& Suggesting {} blocks'.format(len(s))
+        self.logger.debug('&&& Suggesting {} blocks'.format(len(s)))
         return s
 
     def is_valid(self):
@@ -89,8 +90,8 @@ class Piece(object):
         self.torrent.tmp_file.seek(self.start_pos)
         # ... but we read only the # of bytes this piece actually has.
         f = self.torrent.tmp_file.read(self.piece_length)
-        print 'HASH: length of piece {} was {}'.format(
-                self.index, len(f))
+        self.logger.debug('HASH: length of piece {} was {}'.format(
+                self.index, len(f)))
         actual_hash = util.sha1_hash(f)
         return actual_hash == self.piece_hash
 
@@ -106,6 +107,7 @@ class Torrent(object):
         """Reads existing metainfo file, or writes a new one.
            Builds client, fetches peer list, and construct peers.
         """
+        self.logger = logging.getLogger('bt.torrent.Torrent')
         with open(file_name, 'r') as f:
             contents = f.read()
         self.info_dict = info_dict or bencode.bdecode(contents) # If read, bdecode
@@ -126,13 +128,13 @@ class Torrent(object):
                 self.piece_length,
                 self.info_dict['info']['name'],
                 self.info_dict['info']['length']))
-            print 'Appended file {} of length {}'.format(
-                    self.info_dict['info']['name'], self.info_dict['info']['length'])
+            self.logger.info('Appended file {} of length {}'.format(
+                    self.info_dict['info']['name'], self.info_dict['info']['length']))
         except KeyError:
             for f in self.info_dict['info']['files']:
                 self.files.append(File(self.piece_length, f['path'], f['length']))
-                print 'Appended file {} of length {}'.format(
-                        f['path'][len(f['path'])-1], f['length'])
+                self.logger.info('Appended file {} of length {}'.format(
+                        f['path'][len(f['path'])-1], f['length']))
 
         self.tmp_file = open(
                 'temp.tmp', 'w+')
@@ -143,7 +145,7 @@ class Torrent(object):
         self.pieces = [
                 (Piece(self, i, self.pieces_hashes[i]), []) for i in range(self.num_pieces)]
         for p, _ in self.pieces:
-            print 'Piece {} has length {}.'.format(p.index, p.piece_length)
+            logging.debug('Piece {} has length {}.'.format(p.index, p.piece_length))
         self._pieces_added = 0
         self.client = Client(reactor, {self.info_hash: self})
         self.tracker = Tracker(self, self.client)
@@ -151,9 +153,6 @@ class Torrent(object):
         self.client.connect_to_peers(
                 self._new_peers(self._get_peers(resp), self.client)
                 )
-        print 'piece length {} and last piece length {}'.format(
-                self.piece_length, self.last_piece_length)
-        print 'length was', self.length()
     def mark_block_received(self, piece_index, begin, block):
         """Return true if entire piece received and verified; false if not.
         """
@@ -161,10 +160,10 @@ class Torrent(object):
         if piece.blocks[begin].received: # Already have this block
             return False
         if not piece.write_to_block(begin, block):
-            print 'Received {} of {} blocks in piece {}'.format(
+            self.logger.info('Received {} of {} blocks in piece {}'.format(
                     piece.num_blocks_received,
                     piece.num_blocks,
-                    piece.index)
+                    piece.index))
             return False
 
         # Entire piece received
@@ -172,12 +171,12 @@ class Torrent(object):
         piece.received = True
         assert piece.is_valid()
         if self._pieces_added >= self.num_pieces:
-            print '*****ALL PIECES RECEIVED*****'
+            self.logger.info('*****ALL PIECES RECEIVED*****')
             self._write_to_disk()
             raise util.DownloadCompleteException()
         else:
-            print '* {} of {} pieces received*'.format(
-                    self._pieces_added, self.num_pieces)
+            self.logger.info('* {} of {} pieces received*'.format(
+                    self._pieces_added, self.num_pieces))
         return True
     def _write_to_disk(self):
         start = 0
@@ -185,8 +184,8 @@ class Torrent(object):
             new_file = f.ref
             self.tmp_file.seek(start)
             new_file.write(self.tmp_file.read(f.length))
-            print 'Writing to {}, start {}, length {}'.format(
-                    f.path, start, f.length)
+            self.logger.debug('Writing to {}, start {}, length {}'.format(
+                    f.path, start, f.length))
             start += f.length
 
     def pieces_by_rarity(self, peer_id=None):
@@ -196,7 +195,6 @@ class Torrent(object):
             Optionally return such a list for a single peer.
 
         """
-        # print 'Sorting {} pieces'.format(len(self.pieces))
         pieces = sorted(self.pieces, key=lambda x: len(x[1]))
         if peer_id:
             pieces = filter(lambda x: peer_id in x[1], pieces)
@@ -204,9 +202,8 @@ class Torrent(object):
     def decrease_rarity(self, i, peer_id):
         """Record that peer with peer_id has the i-th piece of this torrent.
         """
-        # print 'Decreasing rarity of piece {} because {} has it.'.format(
-        #        i, peer_id)
-        # print 'in decrease_rarity, i was {}'.format(i)
+        self.logger.debug('Decreasing rarity of piece {} because {} has it.'.format(
+                i, peer_id))
         self.pieces[i][1].append(peer_id)
     def _new_peers(self, peer_list, client):
         own_ext_ip = urllib2.urlopen('http://ifconfig.me/ip').read() # HACK

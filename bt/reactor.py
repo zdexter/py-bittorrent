@@ -1,7 +1,10 @@
 import select
 from util import DownloadCompleteException
+import logging
+
 class Reactor():
     def __init__(self):
+        self.logger = logging.getLogger('bt.reactor')
         self._subscribers = {} # {peer_id: class instance}
         self._timers = []
     def add_callback(self, callback):
@@ -11,7 +14,6 @@ class Reactor():
     def add_torrent(self, torrent):
         """Add torrent's client peers to the event loop.
         """
-        # print 'Peers were', torrent.client.peers
         for peer_id in torrent.client.peers.keys():
             self._subscribers[peer_id] = torrent.client.peers[peer_id].conn
         self._subscribers[torrent.client.peer_id] = torrent.client.conn
@@ -40,7 +42,7 @@ class Reactor():
                 while s.has_next_msg():
                     s.send_next_msg()
             for s in exceptional:
-                print 'Exceptional', s
+                self.logger.error('Exceptional: {}'.format(s))
             
             for t in self._timers:
                 t()

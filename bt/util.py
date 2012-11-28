@@ -1,5 +1,6 @@
 import hashlib
 import struct
+import logging
 
 class DownloadCompleteException(Exception):
     pass
@@ -17,6 +18,7 @@ class Bitfield(object):
             or lack (0) of the data at bool_array[i].
 
         """
+        self.logger = logging.getLogger('bt.util.Bitfield')
         assert len(bool_array) == total_length
         str_output = ""
         for b in bool_array:
@@ -24,19 +26,11 @@ class Bitfield(object):
         difference = total_length - len(str_output)
         while len(str_output) % 8 != 0:
             str_output += "0"
-        #print 'len(str_output) was', len(str_output)
         byte_array = ""
         for i in range(0, len(str_output), 8):
             # Convert string of 1's and 0's to base 2 integer
-            # print 'adding', repr(struct.pack('>B', int(str_output[i:i+8], 2)))
             byte_array += \
                     struct.pack('>B', int(str_output[i:i+8], 2))
-        """
-        print type(byte_array)
-        print 'byte array len was', len(byte_array)
-        bits = ''.join(str(bit) for bit in self._bits(byte_array))
-        assert len(byte_array) == self.client.torrent.num_pieces / 8
-        """
         self.byte_array = byte_array
     @classmethod
     def _bits(cls, data):
@@ -51,7 +45,6 @@ class Bitfield(object):
     def parse(cls, peer, bitfield):
         """Decrease piece rarity for each piece the peer reports it has.
         """
-        print 'Received bitfield'
         bitfield_length = len(bitfield)
         bits = ''.join(str(bit) for bit in cls._bits(bitfield))
         # Trim spare bits

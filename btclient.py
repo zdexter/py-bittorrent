@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from bt.torrent import Torrent
-import argparse
+import argparse, logging
 from bt.reactor import Reactor
 
 if __name__ == '__main__':
@@ -29,12 +29,36 @@ if __name__ == '__main__':
         default='mytorrent.torrent',
         help='Name for the metainfo file to read or write.',
     )
+    parser.add_argument(
+        '--logging',
+        default='INFO',
+        help='{debug,info,warning,error,critical}'
+    )
+
     args = parser.parse_args()
+
+    # Choose log level
+    LEVELS = {
+            'debug': logging.DEBUG,
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'error': logging.ERROR,
+            'critical': logging.CRITICAL
+            }
+    log_level = LEVELS.get(args.logging, logging.INFO)
+    logger = logging.getLogger('bt')
+    logger.setLevel(log_level)
+    # Output logging to console
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    # Run BitTorrent client
     reactor = Reactor()
     if args.gen:
         # Generate new torrent file
         torrent = Torrent.write_metainfo_file(args.metainfo, args.url, 'The lazy brown fox jumped over the fat cow.')
-        pass
     else: # Read existing file
         torrent = Torrent(reactor, args.metainfo) 
     reactor.add_torrent(torrent)

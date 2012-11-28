@@ -4,9 +4,11 @@ import util
 from conn import MsgConnection, AcceptConnection
 from message import WireMessage
 from util import Bitfield
+import logging
 
 class Peer(object):
     def __init__(self, ip, port, client, peer_id=None, conn=None):
+        self.logger = logging.getLogger('bt.peer.Peer')
         self.ip = ip
         self.port = port
         self.client = client
@@ -35,12 +37,11 @@ class Peer(object):
         peer_has_pieces = self.client.torrent.pieces_by_rarity()
         if len(peer_has_pieces) > 0:
             # Declare interest to remote peer
-            """print 'Peer "{}" has {} of {} pieces.'.format(
+            self.logger.debug('Peer "{}" has {} of {} pieces.'.format(
                     self.peer_id,
                     len(peer_has_pieces),
                     len(self.client.torrent.pieces)
-                    )
-            """
+                    ))
             self.request_blocks(peer_has_pieces)
             self.set_interested(True)
     def _is_valid_piece(self, piece, index):
@@ -49,9 +50,9 @@ class Peer(object):
         return piece_hash == expected_hash
     # Message callbacks
     def handshake(self, info_hash, peer_id):
-        print 'info_hash was', info_hash
+        self.logger.debug('info_hash was', info_hash)
         assert info_hash in self.client.torrents.keys()
-        print 'Received handshake resp from peer:', peer_id
+        self.logger.debug('Received handshake resp from peer:', peer_id)
         # Replace old key in dictionary
         temp_peer_id = self.peer_id
         self.peer_id = peer_id
@@ -60,47 +61,46 @@ class Peer(object):
         try:
             self.client.torrents[info_hash]
         except KeyError, e:
-            print 'Closing conn; client not serving torrent {}.'.format(info_hash)
+            self.logger.warning(
+                    'Closing conn; client not serving torrent {}.'.format(info_hash))
             self.conn.close()
         self.conn.enqueue_msg(WireMessage.construct_msg(2)) # Interested
 
         pieces_received = [x[0].received for x in self.client.torrent.pieces]
         if len(filter(lambda x: x, pieces_received)) > 0:
             bitfield = Bitfield(pieces_received, self.client.torrent.num_pieces).byte_array
-            # print 'bitfield repr was', repr(bitfield)
             self.conn.enqueue_msg(WireMessage.construct_msg(5, bitfield)) # Bitfield
 
     def bitfield(self, bitfield):
         Bitfield.parse(self, bitfield)
     def keep_alive(self):
-        print 'Received keep-alive'
+        self.logger.debug('Received keep-alive')
     def choke(self):
-        print 'Received choke'
+        self.logger.debug('Received choke')
         self.choking = True
     def unchoke(self):
-        print 'Received unchoke'
+        self.logger.debug('Received unchoke')
         self.request_pieces()
     def interested(self):
-        print 'Received interested'
+        self.logger.debug('Received interested')
         raise Exception("got interested msg")
         self.interested = True
     def not_interested(self):
-        print 'Received not interested';
+        self.logger.debug('Received not interested')
         self.interested = False
     def have(self, piece_index):
         try:
             assert piece_index < len(self.client.torrent.pieces)
         except AssertionError:
             raise Exception('Peer reporting too many pieces in "have."')
-        # print 'Received have {}'.format(piece_index)
         self.client.torrent.decrease_rarity(piece_index,self.peer_id)
-        #self._request_peer_pieces()
     def request(self, index, begin, length):
-        print 'Got request'
+        self.logger.debug('Got request')
         pass
     def piece(self, index, begin, block):
-        #print 'Got piece from {} with index {}; begin {}; length {}'.format(
-        #        self.peer_id, index, begin, len(block))
+        self.logger.debug(
+                'Got piece from {} with index {}; begin {}; length {}'.format(
+                    self.peer_id, index, begin, len(block)))
         if self.client.torrent.mark_block_received(index, begin, block):
             # If piece is now complete
             self.send_have(index)
@@ -108,10 +108,10 @@ class Peer(object):
         self.request_pieces()
         #self.send_cancel(index, begin, len(block))
     def cancel(self, index, begin, length):
-        print 'Got cancel'
+        self.logger.debug('Got cancel')
         pass
     def port(self, listen_port):
-        print 'Got port'
+        self.logger.debug('Got port')
         pass
     # Begin outbound messages
     def send_keep_alive(self):
@@ -132,8 +132,8 @@ class Peer(object):
             blocks = piece.suggest_blocks(max_requests)
             self.outstanding_requests += len(blocks)
             for block in blocks:
-                print '% Requesting pi {}, offset {} and block length {} %'.format(
-                       piece.index, block.begin, block.length)
+                self.logger.debug('% Requesting pi {}, offset {} and block length {} %'.format(
+                       piece.index, block.begin, block.length))
 
                 msg = WireMessage.construct_msg(
                         6, piece.index, block.begin, block.length)
@@ -174,6 +174,7 @@ class Peer(object):
         self.conn.enqueue_msg(msg)
 class Client(object):
     def __init__(self, reactor, torrents):
+        self.logger = logging.getLogger('bt.peer.client')
         self._reactor = reactor
         self.peer_id = self._gen_peer_id()
         self.peers = {}
@@ -183,7 +184,7 @@ class Client(object):
         self.conn = AcceptConnection(self)
     def handshake(self, new_conn, addr, msg):
         peer_id = repr(msg[20:])
-        print 'Testing for peer existence:', self.peers[peer_id]
+        self.logger.debug('Testing for peer existence:', self.peers[peer_id])
         # Python will use repr(peer_id) in data structures; store it as such.
         self.peers[peer_id] = Peer(addr[0], addr[1], peer_id, conn)
     def start_serving(self, torrent, info_hash):
@@ -196,7 +197,7 @@ class Client(object):
         """
         self._reactor.remove_subscriber(peer_id)
         del self.peers[peer_id]
-        print 'Removed {} from peers.'.format(peer_id)
+        self.logger.debug('Removed {} from peers.'.format(peer_id))
     def register_callback(self, callback):
         self._reactor.add_callback(callback)
     def connect_to_peers(self, peer_list):
@@ -205,7 +206,7 @@ class Client(object):
             try:
                 peer.conn.connect(peer.ip, peer.port)
             except socket.error, e:
-                print('Socket error while connecting to {}:{}: {}'.format(
+                self.logger.debug('Socket error while connecting to {}:{}: {}'.format(
                     peer.ip, peer.port, e
                     ))
             else:

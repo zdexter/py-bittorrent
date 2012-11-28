@@ -50,7 +50,6 @@ class WireMessage(object):
         """Return tuple of (message type name, contents encoded in ASCII)
         """
         if buf[1:20] == pstr: # Received handshake
-            print 'decoded handshake'
             handshake = buf[:68]
             expected_length, info_dict, info_hash, peer_id = struct.unpack(
                     "B"+str(len(pstr))+"s8x20s20s",
@@ -62,9 +61,6 @@ class WireMessage(object):
             raise Exception("Too few bytes to form a protocol message.")
 
         # Try to match keep-alive
-        # print 'buf[:5] was', buf[:5]
-        # print 'repr of buf[:5] was', repr(buf[:5])
-        # print 'len(buf[:5]) was', len(buf[:5])
         try:
             keep_alive = struct.unpack("!I", buf[:4])[0]
             assert keep_alive == 0
@@ -99,7 +95,7 @@ class WireMessage(object):
             # Get func name by message id
             return (cls.MESSAGE_TYPES[msg_id][0], args), buf
         except IndexError:
-            print 'Index error with msg:{}'.format(msg)
+            raise Exception('Index error with msg:{}'.format(msg))
 
     @classmethod
     def construct_msg(cls, msg_id, *args):
@@ -115,7 +111,6 @@ class WireMessage(object):
             # Match below --> constructing variable-length msg body
             if msg_id == 5:
                 # bitfield: <bitfield>
-                # print 'args was', args
                 length = len(args[0])
                 fmt += str(length) + 's'
             elif msg_id == 7:
@@ -135,11 +130,8 @@ class WireMessage(object):
             else:
                 packed = struct.pack(fmt, length, msg_id, *args)
         except struct.error, e:
-            print 'At struct error, args was', args, \
+            raise Exception('At struct error, args was', args, \
                 ', msg_id was', msg_id, \
                 ', fmt was', fmt, \
-                ' and length was', length
-            raise Exception(e)
-        # if msg_id == 5:
-        #     print 'repr of packed was', repr(packed)
+                ' and length was', length)
         return packed

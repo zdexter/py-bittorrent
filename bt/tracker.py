@@ -31,6 +31,5 @@ class Tracker():
             'event': 'started'
         }
         announce_url = self.torrent.info_dict['announce']
-        #print 'announce_url was', announce_url
         get_url = announce_url + "?" + urllib.urlencode(params)
         return self._make_req(get_url)
