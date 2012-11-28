@@ -96,7 +96,9 @@ class Peer(object):
         self.client.torrent.decrease_rarity(piece_index,self.peer_id)
     def request(self, index, begin, length):
         self.logger.debug('Got request')
-        pass
+        block_data = self.torrent.get_block(index, begin, length)
+        msg = WireMessage.construct_msg(7, index, begin, block_data)
+        self.conn.enqueue_msg(msg)
     def piece(self, index, begin, block):
         self.logger.debug(
                 'Got piece from {} with index {}; begin {}; length {}'.format(
@@ -182,6 +184,7 @@ class Client(object):
         self.torrents = torrents
         self.torrent = torrents.itervalues().next()
         self.conn = AcceptConnection(self)
+
     def handshake(self, new_conn, addr, msg):
         peer_id = repr(msg[20:])
         self.logger.debug('Testing for peer existence:', self.peers[peer_id])

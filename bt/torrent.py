@@ -17,12 +17,20 @@ class Block(object):
         self.length = length
         self.received = False
         self.times_requested = 0
-    def write(self, data):
+    def _seek_start(self):
+        """Moves temp file to start of this block.
+        """
         self.piece.torrent.tmp_file.seek(self.piece.start_pos + self.begin)
+    def write(self, data):
+        self._seek_start()
         self.logger.debug('WRITE to {}: start_pos {}, begin {}'.format(
             self.piece.index, self.piece.start_pos, self.begin))
         self.piece.torrent.tmp_file.write(data)
         self.received = True
+    def read(self, length):
+        assert length <= self.length
+        self._seek_start()
+        self.piece.torrent.tmp_file.read(length)
 
 class Piece(object):
     """A piece consists of block_size/file_length+1 blocks.
@@ -153,6 +161,11 @@ class Torrent(object):
         self.client.connect_to_peers(
                 self._new_peers(self._get_peers(resp), self.client)
                 )
+    def get_block(self, index, begin, length):
+        # Assumption: length is <= our block size
+        piece = self.pieces[i][0]
+        block = piece.blocks[begin]
+        return block.read(length)
     def mark_block_received(self, piece_index, begin, block):
         """Return true if entire piece received and verified; false if not.
         """
