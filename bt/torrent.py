@@ -171,7 +171,7 @@ class Torrent(object):
                 )
     def get_block(self, index, begin, length):
         # Assumption: length is <= our block size
-        piece = self.pieces[i][0]
+        piece = self.pieces[index][0]
         block = piece.blocks[begin]
         return block.read(length)
     def mark_block_received(self, piece_index, begin, block):
