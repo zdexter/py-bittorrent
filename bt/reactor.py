@@ -11,12 +11,14 @@ class Reactor():
         self._timers.append(callback)
     def remove_subscriber(self, subscriber_id):
         del self._subscribers[subscriber_id]
-    def add_torrent(self, torrent):
-        """Add torrent's client peers to the event loop.
+    def add_connections(self, client_conn, peer_conns):
+        conn_list = [client_conn]
+        for pc in peer_conns:
+            conn_list.append(pc)
+        """Register connections with the event loop.
         """
-        for peer_id in torrent.client.peers.keys():
-            self._subscribers[peer_id] = torrent.client.peers[peer_id].conn
-        self._subscribers[torrent.client.peer_id] = torrent.client.conn
+        for conn in conn_list:
+            self._subscribers[conn.parent.peer_id] = conn
 
     def select(self, timeout=10):
         """Block until at least one socket is readable or writeable.

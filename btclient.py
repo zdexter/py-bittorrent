@@ -3,6 +3,7 @@
 from bt.torrent import Torrent
 import argparse, logging
 from bt.reactor import Reactor
+from bt.client import Client
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -55,14 +56,9 @@ if __name__ == '__main__':
     logger.addHandler(ch)
 
     # Run BitTorrent client
-    reactor = Reactor()
-    if args.gen:
-        # Generate new torrent file
-        torrent = Torrent.write_metainfo_file(args.metainfo, args.url, 'The lazy brown fox jumped over the fat cow.')
-    else: # Read existing file
-        torrent = Torrent(reactor, args.metainfo) 
-    reactor.add_torrent(torrent)
-    reactor.select()
+    client = Client(Torrent(args.metainfo))
+    client.start()
+
     if args.tests:
         import doctest
         doctest.testmod()
