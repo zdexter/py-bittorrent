@@ -4,6 +4,8 @@ A BitTorrent client written in Python. Supports multi-file torrents.
 
 This client implements a rarest-first piece download strategy. That is, the client will attempt to download those pieces that are least common in the swarm before it downloads the more-common pieces.
 
+Please see my blog for detailed technical explanations of what I learned, design decisions, algorithmic challenges, and more: http://zachdex.tumblr.com/post/36792592990/bitttorrent-client-lessons
+
 ### Usage
 
 ./btclient.py -h
