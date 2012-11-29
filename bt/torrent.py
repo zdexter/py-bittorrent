@@ -158,6 +158,14 @@ class Torrent(object):
         self.client = Client(reactor, {self.info_hash: self})
         self.tracker = Tracker(self, self.client)
         resp = self.tracker.connect()
+        self.update_peers()
+        #reactor.add_callback(self.update_peers)
+    def update_peers(self, seconds=120):
+        """Add peers we haven't tried to add yet.
+            TODO: Make this happen only ever `seconds` seconds.
+        """
+        self.logger.debug('UPDATING PEERS >>>>>')
+        resp = self.tracker.connect()
         self.client.connect_to_peers(
                 self._new_peers(self._get_peers(resp), self.client)
                 )

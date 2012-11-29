@@ -1,3 +1,4 @@
+from collections import defaultdict
 import socket
 import time
 import util
@@ -27,8 +28,16 @@ class Peer(object):
         if conn:
             self.conn = MsgConnection(self, conn)
         else:
-            self.conn = MsgConnection(self)
+            self.conn = MsgConnection(self)    
+    def mark_bad(self):
+        """Record that we could not connect to this peer.
+           
+           We might mark a peer as bad because a connecton attempt
+            timed out. Eventually we can give bad peers another chance.
         
+        """
+        if type(self.peer_id) == str:
+            self.client.bad_peers[self.peer_id] += 1
     def add_conn(self, conn):
         self.conn = conn
     def request_pieces(self):
@@ -180,11 +189,11 @@ class Client(object):
         self._reactor = reactor
         self.peer_id = self._gen_peer_id()
         self.peers = {}
+        self.bad_peers = defaultdict(int)
         self._pending_peers = []
         self.torrents = torrents
         self.torrent = torrents.itervalues().next()
         self.conn = AcceptConnection(self)
-
     def handshake(self, new_conn, addr, msg):
         peer_id = repr(msg[20:])
         self.logger.debug('Testing for peer existence:', self.peers[peer_id])
@@ -201,10 +210,13 @@ class Client(object):
         self._reactor.remove_subscriber(peer_id)
         del self.peers[peer_id]
         self.logger.debug('Removed {} from peers.'.format(peer_id))
-    def register_callback(self, callback):
-        self._reactor.add_callback(callback)
     def connect_to_peers(self, peer_list):
         for peer in peer_list:
+            try:
+                if self.peers[peer.peer_id] or self.bad_peers[peer.peer_id] > 0:
+                    continue
+            except KeyError:
+                pass
             handshake = WireMessage.build_handshake(self, peer, self.torrent)
             try:
                 peer.conn.connect(peer.ip, peer.port)

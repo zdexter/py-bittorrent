@@ -8,7 +8,7 @@ class AcceptConnection(object):
     """
     def __init__(self, parent, bind_to=6881):
         self.logger = logging.getLogger('bt.conn.AcceptConnection')
-        self._parent = parent
+        self.parent = parent
         self.socket = socket.socket(
                 socket.AF_INET,
                 socket.SOCK_STREAM
@@ -21,7 +21,7 @@ class AcceptConnection(object):
         if msg_type == 'handshake':
             self.logger.debug('INCOMING HANDSHAKE')
             new_conn, addr = self.socket.accept()
-            func = getattr(self._parent, msg_type)
+            func = getattr(self.parent, msg_type)
             assert callable(func)
             func(new_conn, addr, msg_contents)
             return True
@@ -35,10 +35,12 @@ class MsgConnection(object):
     """
     def __init__(self, parent, socket=None):
         self.logger = logging.getLogger('bt.conn.MsgConnection')
-        self._parent = parent
+        self.parent = parent
         self._outbound = []
         if socket:
             self.socket = socket
+    def mark_bad(self):
+        self.parent.mark_bad()
     def connect(self, ip, port, timeout=2):
         self.ip = ip
         self.port = port
@@ -75,6 +77,7 @@ class MsgConnection(object):
             try:
                 msg = self.socket.recv(4096)
             except Exception, e:
+                self.parent.mark_bad()
                 self.logger.warning(
                         'recv() on {}:{}: {}'.format(
                             self.ip, self.port, e))
@@ -86,7 +89,7 @@ class MsgConnection(object):
         if len(buf) == 0: return False
         messages = WireMessage.decode_all(buf)
         for msg in messages:
-            func = getattr(self._parent, msg[0])
+            func = getattr(self.parent, msg[0])
             assert callable(func)
             try:
                 if msg[1]:
@@ -100,7 +103,7 @@ class MsgConnection(object):
     def enqueue_msg(self, msg):
         self._outbound.append(msg)
     def close(self):
-        self._parent.client.notify_closed(self._parent.peer_id)
+        self.parent.client.notify_closed(self._parent.peer_id)
         self.socket.close()
     def fileno(self):
         return self.socket.fileno()
