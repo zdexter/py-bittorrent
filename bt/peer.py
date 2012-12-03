@@ -76,8 +76,9 @@ class Peer(object):
         self.conn.enqueue_msg(WireMessage.construct_msg(2)) # Interested
 
         pieces_received = [x[0].received for x in self.client.torrent.pieces]
-        if len(filter(lambda x: x, pieces_received)) > 0:
-            bitfield = Bitfield(pieces_received, self.client.torrent.num_pieces).byte_array
+        if pieces_received.count(True) > 0:
+            assert len(pieces_received == self.client.torrent.num_pieces)
+            bitfield = Bitfield(pieces_received).byte_array
             self.conn.enqueue_msg(WireMessage.construct_msg(5, bitfield)) # Bitfield
 
     def bitfield(self, bitfield):

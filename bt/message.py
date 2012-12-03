@@ -95,7 +95,7 @@ class WireMessage(object):
             # Get func name by message id
             return (cls.MESSAGE_TYPES[msg_id][0], args), buf
         except IndexError:
-            raise Exception('Index error with msg:{}'.format(msg))
+            raise Exception('Index error with msg:{}'.format(msg_id))
 
     @classmethod
     def construct_msg(cls, msg_id, *args):

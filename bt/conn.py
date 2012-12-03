@@ -16,8 +16,7 @@ class AcceptConnection(object):
         self.socket.bind(('localhost', bind_to))
         self.socket.listen(5)
     def recv_msg(self, msg):
-        handshake = WireMessage.decode(msg)
-        msg_type, msg_contents = WireMessage.decode(buf)
+        msg_type, msg_contents = WireMessage.decode(msg)
         if msg_type == 'handshake':
             self.logger.debug('INCOMING HANDSHAKE')
             new_conn, addr = self.socket.accept()

@@ -2,7 +2,6 @@
 
 from bt.torrent import Torrent
 import argparse, logging
-from bt.reactor import Reactor
 from bt.client import Client
 
 if __name__ == '__main__':
